@@ -1,0 +1,11 @@
+.env
+.git
+bin/
+bootstrap
+sample/
+test/
+docs/
+Makefile
+README.md
+README_ZH.md
+**/*_test.go
