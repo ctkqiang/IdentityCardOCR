@@ -12,6 +12,9 @@ import (
 // Uses word boundaries to locate the number within OCR text.
 var idCardPattern = regexp.MustCompile(`\b[1-9]\d{5}(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx]\b`)
 
+// myKadPattern matches a 12-digit Malaysian MyKad number.
+var myKadPattern = regexp.MustCompile(`\b\d{12}\b`)
+
 // expiryPattern matches dates formatted as YYYYMMDD found near expiry / issue annotations.
 var expiryPattern = regexp.MustCompile(`(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])`)
 
@@ -52,7 +55,109 @@ func parseChinaIDCard(doc model.DocumentInfo) model.DocumentInfo {
 }
 
 func parseMalaysiaMyKad(doc model.DocumentInfo) model.DocumentInfo {
+	raw := doc.RawText
+
+	idNumber := myKadPattern.FindString(raw)
+	if idNumber == "" {
+		return doc
+	}
+
+	doc.IDNumber = idNumber
+	doc.DateOfBirth = utilities.MyKadDOB(idNumber)
+	doc.Sex = utilities.MyKadSex(idNumber)
+	doc.Nationality = "MALAYSIA"
+	doc.Name = extractMyKadName(raw, idNumber)
+	doc.Address = extractMyKadAddress(raw, idNumber)
+
 	return doc
+}
+
+// extractMyKadName extracts the cardholder name from OCR text of a Malaysian MyKad.
+// The name appears as uppercase alphabetic words before the 12-digit MyKad number.
+func extractMyKadName(raw, idNumber string) string {
+	clean := strings.TrimSpace(raw)
+
+	idIdx := strings.Index(clean, idNumber)
+	if idIdx <= 0 {
+		return ""
+	}
+
+	prefix := strings.TrimSpace(clean[:idIdx])
+
+	// Extract uppercase alphabetic words of 3+ characters.
+	wordRe := regexp.MustCompile(`\b[A-Z]{3,}\b`)
+	candidates := wordRe.FindAllString(prefix, -1)
+
+	// Filter out known OCR artefacts / line markers.
+	noiseWords := map[string]bool{
+		"JVS": true, "AGS": true, "TCK": true,
+	}
+	var nameParts []string
+	for _, w := range candidates {
+		if noiseWords[w] {
+			continue
+		}
+		nameParts = append(nameParts, w)
+	}
+
+	if len(nameParts) == 0 {
+		// Fallback: try 2-char words, excluding single-letter fragments.
+		wordRe2 := regexp.MustCompile(`\b[A-Z]{2,}\b`)
+		for _, w := range wordRe2.FindAllString(prefix, -1) {
+			if !noiseWords[w] {
+				nameParts = append(nameParts, w)
+			}
+		}
+	}
+
+	return strings.Join(nameParts, " ")
+}
+
+// extractMyKadAddress extracts the residential address from OCR text of a
+// Malaysian MyKad. The address block sits between the MyKad number and the
+// citizenship/sex annotations.
+func extractMyKadAddress(raw, idNumber string) string {
+	clean := strings.TrimSpace(raw)
+
+	idIdx := strings.Index(clean, idNumber)
+	if idIdx < 0 {
+		return ""
+	}
+
+	// Take text after the MyKad number.
+	suffix := strings.TrimSpace(clean[idIdx+len(idNumber):])
+
+	// Cut at "WARGANEGARA" (citizenship marker) which ends the address block.
+	if idx := strings.Index(suffix, "WARGANEGARA"); idx >= 0 {
+		suffix = strings.TrimSpace(suffix[:idx])
+	}
+
+	// Collapse whitespace into single spaces and split into logical lines.
+	words := strings.Fields(suffix)
+	if len(words) == 0 {
+		return ""
+	}
+
+	// Normalize: strip short noise tokens (1-2 chars, all-digit) from the address.
+	var addrParts []string
+	for _, w := range words {
+		if len(w) <= 2 && isAllDigits(w) {
+			continue
+		}
+		addrParts = append(addrParts, w)
+	}
+
+	return strings.Join(addrParts, " ")
+}
+
+// isAllDigits returns true if s consists entirely of ASCII digits.
+func isAllDigits(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // extractIDNumber finds the first 18-digit Chinese ID number in the OCR text.
