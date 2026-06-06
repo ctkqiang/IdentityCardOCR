@@ -7,3 +7,6 @@ environment:
   eventbridge:
     bus_name: identity-card-ocr-bus
     source: identity-card-ocr
+  dynamodb:
+    user_identity_table: identity-card-ocr-users
+    failed_records_table: identity-card-ocr-failed

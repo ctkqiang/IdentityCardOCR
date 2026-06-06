@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -129,9 +128,4 @@ func (s *Store) ListDocuments(ctx context.Context) ([]string, error) {
 	}
 	sort.Strings(docs)
 	return docs, nil
-}
-
-// formatTimestamp formats a time for use in display contexts.
-func formatTimestamp(t time.Time) string {
-	return t.Format(time.RFC3339)
 }

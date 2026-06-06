@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,6 +26,19 @@ const (
 	MALAYSIA
 	US
 )
+
+func (c Country) String() string {
+	switch c {
+	case CHINA:
+		return "china"
+	case MALAYSIA:
+		return "malaysia"
+	case US:
+		return "us"
+	default:
+		return "unknown"
+	}
+}
 
 const (
 	CHINESE Locale = "chi_sim"
@@ -51,6 +65,10 @@ type awsConfigRaw struct {
 			BusName string `yaml:"bus_name"`
 			Source  string `yaml:"source"`
 		} `yaml:"eventbridge"`
+		DynamoDB struct {
+			UserIdentityTable string `yaml:"user_identity_table"`
+			FailedRecordsTable string `yaml:"failed_records_table"`
+		} `yaml:"dynamodb"`
 	} `yaml:"environment"`
 }
 
@@ -71,6 +89,12 @@ type EventBridgeConfig struct {
 	Source  string // EventBridge Source field, e.g. identity-card-ocr
 }
 
+// DynamoDBConfig holds DynamoDB table names from aws-config.yml.
+type DynamoDBConfig struct {
+	UserIdentityTable string // table for passed OCR results
+	FailedRecordsTable string // table for failed OCR attempts
+}
+
 // AWSConfig holds AWS environment configuration, always read fresh from aws-config.yml.
 // Access via config.AWS().Region / config.AWS().S3.Bucket to always get live values.
 type AWSConfig struct {
@@ -78,6 +102,7 @@ type AWSConfig struct {
 	Profile     string            // AWS credentials profile name
 	S3          S3Config          // S3 bucket and path configuration
 	EventBridge EventBridgeConfig // EventBridge bus name and source
+	DynamoDB    DynamoDBConfig    // DynamoDB table names
 }
 
 var (
@@ -128,6 +153,10 @@ func AWS() AWSConfig {
 				BusName: "",
 				Source:  "identity-card-ocr",
 			},
+			DynamoDB: DynamoDBConfig{
+				UserIdentityTable: "identity-card-ocr-users",
+				FailedRecordsTable: "identity-card-ocr-failed",
+			},
 		}
 	)
 
@@ -164,6 +193,14 @@ func AWS() AWSConfig {
 
 	if raw.Environment.EventBridge.Source != "" {
 		cfg.EventBridge.Source = raw.Environment.EventBridge.Source
+	}
+
+	if raw.Environment.DynamoDB.UserIdentityTable != "" {
+		cfg.DynamoDB.UserIdentityTable = raw.Environment.DynamoDB.UserIdentityTable
+	}
+
+	if raw.Environment.DynamoDB.FailedRecordsTable != "" {
+		cfg.DynamoDB.FailedRecordsTable = raw.Environment.DynamoDB.FailedRecordsTable
 	}
 
 	return cfg
@@ -275,6 +312,21 @@ func trimInlineComment(s string) string {
 		}
 	}
 	return s
+}
+
+// CountryFromString maps a country string to its Country enum value.
+// Returns an error if the country is unknown.
+func CountryFromString(s string) (Country, error) {
+	switch s {
+	case "china":
+		return CHINA, nil
+	case "malaysia":
+		return MALAYSIA, nil
+	case "us":
+		return US, nil
+	default:
+		return -1, fmt.Errorf("unknown country: %s", s)
+	}
 }
 
 // indexByte returns the index of the first occurrence of b in s, or -1.
