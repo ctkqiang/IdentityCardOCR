@@ -64,19 +64,21 @@ func resolveAWSConfigPath() {
 //	region := config.AWS().Region   // "ap-east-1"
 //	profile := config.AWS().Profile // "default"
 func AWS() AWSConfig {
-	resolveAWSConfigPath()
+	var (
+		raw awsConfigRaw
+		cfg = AWSConfig{
+			Region:  "ap-east-1",
+			Profile: "default",
+		}
+	)
 
-	cfg := AWSConfig{
-		Region:  "ap-east-1",
-		Profile: "default",
-	}
+	resolveAWSConfigPath()
 
 	data, err := os.ReadFile(awsConfigPath)
 	if err != nil {
 		return cfg
 	}
 
-	var raw awsConfigRaw
 	if err := yaml.Unmarshal(data, &raw); err != nil {
 		return cfg
 	}
@@ -84,6 +86,7 @@ func AWS() AWSConfig {
 	if raw.Environment.Region != "" {
 		cfg.Region = raw.Environment.Region
 	}
+
 	if raw.Environment.Profile != "" {
 		cfg.Profile = raw.Environment.Profile
 	}
