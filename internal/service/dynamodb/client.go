@@ -39,12 +39,16 @@ type Client struct {
 	client *dynamodb.Client
 }
 
-// NewClient creates a DynamoDB client from the shared AWS config.
+// NewClient returns a DynamoDB service wrapper backed by the shared AWS SDK
+// configuration. The returned Client is safe for concurrent use.
 func NewClient(cfg aws.Config) *Client {
 	return &Client{client: dynamodb.NewFromConfig(cfg)}
 }
 
-// PutUserIdentity inserts a successfully processed identity into the given table.
+// PutUserIdentity writes a successfully processed identity document to DynamoDB.
+//
+// The item's CreatedAt field is set to the current UTC time if left empty.
+// The table must exist before calling this method; no table creation is performed.
 func (c *Client) PutUserIdentity(ctx context.Context, table string, item UserIdentity) error {
 	if item.CreatedAt == "" {
 		item.CreatedAt = time.Now().UTC().Format(time.RFC3339)
@@ -65,7 +69,11 @@ func (c *Client) PutUserIdentity(ctx context.Context, table string, item UserIde
 	return nil
 }
 
-// PutFailedRecord inserts a failed OCR attempt into the given table.
+// PutFailedRecord writes a failed OCR attempt to DynamoDB.
+//
+// The item's CreatedAt field is set to the current UTC time if left empty.
+// Each call creates a new item; repeated failures for the same document_id
+// overwrite the previous entry.
 func (c *Client) PutFailedRecord(ctx context.Context, table string, item FailedRecord) error {
 	if item.CreatedAt == "" {
 		item.CreatedAt = time.Now().UTC().Format(time.RFC3339)

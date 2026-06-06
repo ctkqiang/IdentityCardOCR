@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 200" width="600" height="200">
+  <defs>
+    <linearGradient id="awsGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FF9900;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#FF6600;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="lambdaGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#8C4FFF;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#6B3FCF;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- AWS Cube Logo -->
+  <g transform="translate(30, 40)">
+    <!-- Main cube body -->
+    <path d="M75 20 L120 50 L75 80 L30 50 Z" fill="url(#awsGrad)" stroke="#D9750A" stroke-width="1.5"/>
+    <!-- Left face -->
+    <path d="M30 50 L75 80 L75 110 L30 80 Z" fill="#E8900C" stroke="#D9750A" stroke-width="1.5"/>
+    <!-- Right face -->
+    <path d="M75 80 L120 50 L120 80 L75 110 Z" fill="#CC7A0B" stroke="#D9750A" stroke-width="1.5"/>
+    <!-- Smile mark on front face -->
+    <path d="M45 60 Q60 72 105 60" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+  </g>
+
+  <!-- Lambda symbol -->
+  <g transform="translate(215, 30)">
+    <!-- Lambda bolt -->
+    <polygon points="75,15 15,75 60,75 50,115 115,55 65,55 85,15" fill="url(#lambdaGrad)" stroke="#5A2EBF" stroke-width="1.5"/>
+    <!-- Inner highlight -->
+    <polygon points="70,30 25,72 55,72 48,100 95,58 62,58 75,30" fill="rgba(255,255,255,0.15)"/>
+  </g>
+
+  <!-- Text -->
+  <g transform="translate(360, 50)">
+    <text x="0" y="30" font-family="SF Pro Display, -apple-system, Helvetica, Arial, sans-serif" font-size="28" font-weight="800" fill="#232F3E" letter-spacing="-0.5">
+      IdentityCardOCR
+    </text>
+    <text x="0" y="58" font-family="SF Pro Display, -apple-system, Helvetica, Arial, sans-serif" font-size="13" font-weight="500" fill="#545B64" letter-spacing="1.5">
+      AWS LAMBDA · TESSERACT OCR
+    </text>
+    <text x="0" y="82" font-family="SF Pro Display, -apple-system, Helvetica, Arial, sans-serif" font-size="11" fill="#879196">
+      身份证 · MyKad · パスポート · Passport
+    </text>
+  </g>
+
+  <!-- Bottom line -->
+  <line x1="360" y1="100" x2="570" y2="100" stroke="url(#awsGrad)" stroke-width="2"/>
+</svg>

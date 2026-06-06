@@ -76,7 +76,7 @@ func HandleRequest(ctx context.Context, s3Event events.S3Event) (Response, error
 		}
 
 		doc, err := service.ExtractTextFromIdentityDocument(imagePath, country)
-		os.Remove(imagePath) // clean up temp file
+		os.Remove(imagePath)
 
 		if err != nil {
 			failed++

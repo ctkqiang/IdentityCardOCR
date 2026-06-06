@@ -1,15 +1,8 @@
 package aws
 
-import (
-	"context"
-	"identity_card_ocr/internal/event"
-	"identity_card_ocr/internal/model"
-)
-
-func LambdaHandler(ctx context.Context, document *model.DocumentInfo, event *event.LambdaEvent) (model.Response, error) {
-	return model.Response{
-		Text:     event.Name,
-		Document: *document,
-		Err:      nil,
-	}, nil
-}
+// Lambda handler is defined in internal/lambda/handler.go (HandleRequest).
+// The root main.go and cmd/lambda/main.go wire it directly.
+//
+// This file is intentionally empty — the aws package provides
+// authentication (account.go), infrastructure (infra.go), and S3 (s3.go)
+// but does not own the Lambda handler itself.

@@ -77,32 +77,48 @@ type AWSAuth struct {
 	SecretAccessKey string      `yaml:"secret_access_key"`
 }
 
-// S3Config holds S3 bucket and key prefix from aws-config.yml.
+// S3Config holds the S3 bucket name and key prefix used for image uploads
+// and the append-only event log. Both values originate from aws-config.yml
+// and are read fresh on each config.AWS() call.
 type S3Config struct {
 	Bucket string // S3 bucket name, e.g. identity-card-ocr
-	Path   string // S3 key prefix, e.g. identity/
+	Path   string // S3 key prefix without trailing slash, e.g. identity
 }
 
-// EventBridgeConfig holds EventBridge bus name and event source from aws-config.yml.
+// EventBridgeConfig holds the custom event bus name and the Source field
+// value attached to every published event. When BusName is empty, events
+// are published to the default event bus.
 type EventBridgeConfig struct {
-	BusName string // custom event bus name; empty = default bus
-	Source  string // EventBridge Source field, e.g. identity-card-ocr
+	BusName string // custom event bus name; empty string selects the default bus
+	Source  string // value written to the Source field of every EventBridge event
 }
 
-// DynamoDBConfig holds DynamoDB table names from aws-config.yml.
+// DynamoDBConfig holds the table names used for persisting OCR results.
+// UserIdentityTable receives successfully parsed identity documents.
+// FailedRecordsTable receives failed OCR attempts with phase and error details.
 type DynamoDBConfig struct {
-	UserIdentityTable string // table for passed OCR results
-	FailedRecordsTable string // table for failed OCR attempts
+	UserIdentityTable  string // table for passed OCR results (PK: document_id)
+	FailedRecordsTable string // table for failed OCR attempts (PK: document_id)
 }
 
-// AWSConfig holds AWS environment configuration, always read fresh from aws-config.yml.
-// Access via config.AWS().Region / config.AWS().S3.Bucket to always get live values.
+// AWSConfig is the root AWS environment configuration, deserialized from
+// aws-config.yml on every call to config.AWS(). Callers receive the current
+// live values; there is no in-memory cache that can drift from the file.
+//
+// Field access pattern:
+//
+//	region  := config.AWS().Region
+//	bucket  := config.AWS().S3.Bucket
+//	keyPath := config.AWS().S3.Path
+//
+// All fields fall back to safe defaults when aws-config.yml is missing,
+// malformed, or contains empty values.
 type AWSConfig struct {
 	Region      string            // AWS region, e.g. ap-east-1 (Hong Kong)
-	Profile     string            // AWS credentials profile name
-	S3          S3Config          // S3 bucket and path configuration
-	EventBridge EventBridgeConfig // EventBridge bus name and source
-	DynamoDB    DynamoDBConfig    // DynamoDB table names
+	Profile     string            // AWS credentials profile name for local development
+	S3          S3Config          // S3 bucket and key-prefix configuration
+	EventBridge EventBridgeConfig // EventBridge bus name and event source
+	DynamoDB    DynamoDBConfig    // DynamoDB table names for OCR results
 }
 
 var (
@@ -110,8 +126,9 @@ var (
 	awsConfigPathOnce sync.Once
 )
 
-// resolveAWSConfigPath determines the aws-config.yml path once.
-// Priority: AWS_CONFIG_PATH env → $CWD/aws-config.yml → aws-config.yml
+// resolveAWSConfigPath resolves the absolute path to aws-config.yml exactly once
+// per process lifetime. Resolution order: AWS_CONFIG_PATH environment variable,
+// then $CWD/aws-config.yml, then ./aws-config.yml relative to the binary.
 func resolveAWSConfigPath() {
 	awsConfigPathOnce.Do(func() {
 		awsConfigPath = os.Getenv("AWS_CONFIG_PATH")
@@ -128,17 +145,13 @@ func resolveAWSConfigPath() {
 	})
 }
 
-// AWS reads aws-config.yml and returns the current AWS configuration.
-// Use config.AWS().Region / config.AWS().S3.Bucket to always get live values.
+// AWS reads aws-config.yml from disk and returns the merged AWS configuration.
 //
-// Falls back to safe defaults if the file is missing, malformed,
-// or fields are empty.
+// Every call re-reads the file so configuration changes take effect on the
+// next invocation without a restart. Missing or malformed YAML causes a
+// silent fallback to the documented defaults.
 //
-// Usage:
-//
-//	region  := config.AWS().Region       // "ap-east-1"
-//	bucket  := config.AWS().S3.Bucket    // "identity-card-ocr"
-//	keyPath := config.AWS().S3.Path      // "identity/"
+// The caller must not modify the returned struct; it is a value copy.
 func AWS() AWSConfig {
 	var (
 		raw awsConfigRaw
@@ -206,6 +219,17 @@ func AWS() AWSConfig {
 	return cfg
 }
 
+// ConfigAWSAuthKeys reads AWS credentials from environment variables and .env,
+// returning an AWSAuth struct suitable for SDK credential configuration.
+//
+// Resolution order:
+//   - os.Getenv("AWS_ACCESS_KEY_ID") / os.Getenv("AWS_SECRET_ACCESS_KEY")
+//   - .env file in the working directory
+//   - zero-value AWSAuth (SDK falls through to the default credential chain)
+//
+// The returned AccessKeyID and SecretAccessKey may both be empty, signalling
+// the caller to rely on the AWS SDK default credential provider chain
+// (~/.aws/credentials, IAM instance profile, ECS task role, etc.).
 func ConfigAWSAuthKeys() AWSAuth {
 	return loadEnvAuth()
 }
@@ -314,8 +338,11 @@ func trimInlineComment(s string) string {
 	return s
 }
 
-// CountryFromString maps a country string to its Country enum value.
-// Returns an error if the country is unknown.
+// CountryFromString converts a lowercase country identifier to its Country
+// enum constant. Accepted inputs are "china", "malaysia", and "us".
+//
+// The returned error reports the unrecognised input string when the country
+// is not one of the three supported values.
 func CountryFromString(s string) (Country, error) {
 	switch s {
 	case "china":

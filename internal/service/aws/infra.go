@@ -17,9 +17,17 @@ import (
 	"identity_card_ocr/internal/utilities"
 )
 
-// EnsureS3Bucket verifies the named S3 bucket exists in the given region.
-// If the bucket does not exist, it is created with default private ACL.
-// Returns nil if the bucket already exists or was successfully created.
+// EnsureS3Bucket guarantees the named S3 bucket exists in the target region.
+//
+// Uses HeadBucket to probe for existence. When the bucket is absent
+// (404 / NoSuchBucket), the function creates it with private ACL and
+// waits up to 30 seconds for the bucket to become reachable.
+//
+// An error of type BucketAlreadyOwnedByYou is silently accepted; any other
+// creation error is returned to the caller.
+//
+// region is used for the LocationConstraint on CreateBucket. The us-east-1
+// region omits the constraint (it is the default).
 func EnsureS3Bucket(ctx context.Context, cfg aws.Config, bucket, region string) error {
 	s3c := s3.NewFromConfig(cfg)
 
@@ -65,20 +73,23 @@ type apiError interface {
 	ErrorCode() string
 }
 
-// isBucketAlreadyOwnedByYou checks if the S3 error indicates the bucket
-// already exists and is owned by this AWS account.
+// isBucketAlreadyOwnedByYou reports whether err is an S3 API error with
+// code BucketAlreadyOwnedByYou. Errors with code BucketAlreadyExists
+// (bucket name owned by a different account) are intentionally not matched;
+// those must be surfaced so the operator can choose a different bucket name.
 func isBucketAlreadyOwnedByYou(err error) bool {
 	var ae apiError
 	if errors.As(err, &ae) {
-		code := ae.ErrorCode()
-		return code == "BucketAlreadyOwnedByYou" || code == "BucketAlreadyExists"
+		return ae.ErrorCode() == "BucketAlreadyOwnedByYou"
 	}
 	return false
 }
 
-// EnsureEventBridgeBus verifies the named custom event bus exists.
-// If busName is empty (default bus), this is a no-op.
-// Creates the bus if it doesn't exist.
+// EnsureEventBridgeBus guarantees the named custom event bus exists.
+//
+// An empty busName signals the default event bus, in which case the function
+// returns nil immediately (the default bus always exists). For named buses,
+// DescribeEventBus probes for existence; CreateEventBus is called on failure.
 func EnsureEventBridgeBus(ctx context.Context, cfg aws.Config, busName string) error {
 	if busName == "" {
 		utilities.LogProgress("infra", "eventbridge", "using default event bus")
@@ -135,8 +146,15 @@ func newSimpleTable(name, hashKey string) ddbTableSchema {
 	}
 }
 
-// EnsureDynamoDBTable verifies the named DynamoDB table exists.
-// If not, creates it with PAY_PER_REQUEST billing and waits for it to become active.
+// EnsureDynamoDBTable guarantees the named DynamoDB table is active.
+//
+// DescribeTable confirms existence. On ResourceNotFoundException the table
+// is created with PAY_PER_REQUEST billing and the call blocks until the table
+// reaches ACTIVE status (2-minute timeout). ResourceInUseException during
+// creation is logged and treated as success — another caller is creating it.
+//
+// Any error other than ResourceNotFoundException from DescribeTable is
+// returned to the caller without attempting creation.
 func EnsureDynamoDBTable(ctx context.Context, cfg aws.Config, schema ddbTableSchema) error {
 	ddbc := dynamodb.NewFromConfig(cfg)
 
@@ -189,13 +207,17 @@ func isResourceInUse(err error) bool {
 	return errors.As(err, &riu)
 }
 
-// EnsureInfrastructure provisions all required AWS resources for the application.
-// Idempotent — safe to call on every cold start.
+// EnsureInfrastructure provisions every AWS resource the application depends on.
 //
-// Resources created if missing:
-//   - S3 bucket (from aws-config.yml)
-//   - DynamoDB tables: user_identity and failed_records
-//   - EventBridge custom event bus
+// It sequences through S3 bucket, DynamoDB tables (user_identity and
+// failed_records), and EventBridge bus creation. Each sub-call is idempotent;
+// resources that already exist are detected and skipped without side effects.
+//
+// Init() must have completed successfully before calling this function.
+//
+// Resource names are read from config.AWS() and therefore from aws-config.yml.
+// On first deploy expect 15–30 seconds of latency while DynamoDB tables are
+// created; subsequent calls on warm containers return in under a second.
 func EnsureInfrastructure(ctx context.Context) error {
 	if !Ready() {
 		return fmt.Errorf("aws: not authenticated — call Init() first")

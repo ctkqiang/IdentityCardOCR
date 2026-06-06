@@ -40,23 +40,18 @@ var (
 	globalMu      sync.Mutex
 )
 
-// Init performs one-time AWS authentication and stores the result globally.
+// Init authenticates with AWS and caches the resulting SDK configuration
+// in a process-wide singleton. It is safe to call multiple times; subsequent
+// calls after the first successful authentication return nil immediately.
 //
-// Configuration is read from:
-//   - aws-config.yml  → region, profile
-//   - .env / env vars  → AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY (optional)
+// Credential resolution merges three sources:
+//   - config.ConfigAWSAuthKeys() for static credentials from .env
+//   - config.AWS().Region for the target region from aws-config.yml
+//   - AWS SDK default credential chain (~/.aws/credentials, IAM role, etc.)
 //
-// If no explicit credentials are provided, the AWS SDK falls through
-// the default credential chain (~/.aws/credentials, IAM role, etc.).
-//
-// Call this once during application startup (e.g. in main.go), then
-// use Get() everywhere else.
-//
-// Usage:
-//
-//	if err := aws.Init(ctx); err != nil {
-//	    log.Fatal("AWS authentication failed:", err)
-//	}
+// The caller receives an STS GetCallerIdentity-verified error or nil.
+// On success, the authenticated account identity (ARN, user ID, account ID)
+// is logged and available via GetAccount().Identity().
 func Init(ctx context.Context) error {
 	var opts []func(*awsconfig.LoadOptions) error
 
@@ -127,15 +122,14 @@ func Init(ctx context.Context) error {
 	return nil
 }
 
-// Get returns the global authenticated Account singleton.
+// GetAccount returns the process-wide authenticated Account singleton.
 //
-// Panics if Init() has not been called successfully.
-// Call Init() once during startup before any Get() calls.
+// The caller must have called Init() successfully before invoking GetAccount.
+// If Init() has not been called or failed, GetAccount panics.
+// Use Ready() to check authentication state without panicking.
 //
-// Usage:
-//
-//	acct := aws.Get()
-//	s3Client := s3.NewFromConfig(acct.Config())
+// The returned pointer is valid for the lifetime of the process; the
+// underlying SDK configuration is immutable after Init() completes.
 func GetAccount() *Account {
 	globalMu.Lock()
 	acct := globalAccount
@@ -147,15 +141,17 @@ func GetAccount() *Account {
 	return acct
 }
 
-// Ready returns true if authentication succeeded and the Account is usable.
-// Safe to call before Get() to check state without panicking.
+// Ready reports whether Init() has completed successfully and the Account
+// singleton is safe to use. Callers that must avoid panics should guard
+// GetAccount() with Ready().
 func Ready() bool {
 	globalMu.Lock()
 	defer globalMu.Unlock()
 	return globalAccount != nil && globalAccount.ready
 }
 
-// InitError returns the error from the last Init() call, or nil if successful.
+// InitError returns the error captured during the most recent Init() call,
+// or nil when Init() succeeded or has not been invoked yet.
 func InitError() error {
 	globalMu.Lock()
 	defer globalMu.Unlock()
@@ -165,38 +161,33 @@ func InitError() error {
 	return globalAccount.initErr
 }
 
-// Config returns the reusable AWS SDK config for constructing service clients.
+// Config returns the shared AWS SDK configuration used by all service clients
+// in the application. The returned config carries the authenticated region,
+// credentials, and HTTP client settings established during Init().
 //
-// All AWS service clients throughout the application share this single config,
-// ensuring consistent region, credentials, and HTTP settings.
-//
-// Usage:
-//
-//	s3Client  := s3.NewFromConfig(aws.Get().Config())
-//	txtClient := textract.NewFromConfig(aws.Get().Config())
+// The config is immutable after Init(); callers receive a value copy.
 func (a *Account) Config() awshttp.Config {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.cfg
 }
 
-// Identity returns the verified STS caller identity.
-// Use for logging, auditing, and confirming which AWS account/role is active.
-//
-// Usage:
-//
-//	id := aws.Get().Identity()
-//	log.Printf("Running as %s (account %s)", id.ARN, id.AccountID)
+// Identity returns the STS GetCallerIdentity response captured during Init().
+// The returned struct contains the verified AWS account ID, IAM ARN, and
+// user ID of the caller. It is read-only; call Reauth() to refresh the
+// identity mid-process.
 func (a *Account) Identity() CallerIdentity {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.identity
 }
 
-// Reauth re-runs STS GetCallerIdentity to refresh the caller identity.
-// Useful after credential rotation or long-running processes.
+// Reauth re-runs STS GetCallerIdentity against the existing SDK configuration
+// and replaces the cached identity. Useful after credential rotation or in
+// long-running processes that need periodic identity verification.
 //
-// Returns the updated identity on success.
+// The call is safe for concurrent use; it acquires the write lock.
+// On error the previous identity is preserved.
 func (a *Account) Reauth(ctx context.Context) (CallerIdentity, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -218,15 +209,11 @@ func (a *Account) Reauth(ctx context.Context) (CallerIdentity, error) {
 	return a.identity, nil
 }
 
-// AWSSdkClient returns the shared AWS SDK config from the authenticated Account singleton.
+// AWSSdkClient returns the shared SDK configuration from the authenticated
+// Account singleton. Init() must be called before invoking this function.
 //
-// Call Init(ctx) once in main() before using this function.
-// Returns the cached config — no redundant LoadDefaultConfig calls.
-//
-// Usage:
-//
-//	cfg, err := aws.AWSSdkClient(ctx)
-//	s3Client := s3.NewFromConfig(cfg)
+// The returned config is the single cached value from Init(); no additional
+// HTTP calls or credential resolution occurs.
 func AWSSdkClient(_ context.Context) (awshttp.Config, error) {
 	if !Ready() {
 		return awshttp.Config{}, fmt.Errorf("aws: not authenticated — call Init() first")
@@ -234,8 +221,9 @@ func AWSSdkClient(_ context.Context) (awshttp.Config, error) {
 	return GetAccount().Config(), nil
 }
 
-// Dispose clears the global singleton.
-// Call only during graceful shutdown or testing teardown.
+// Dispose clears the global Account singleton, releasing the SDK
+// configuration. Intended for graceful shutdown and test teardown only.
+// After Dispose(), Ready() reports false until Init() is called again.
 func Dispose() {
 	globalMu.Lock()
 	defer globalMu.Unlock()
