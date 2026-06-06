@@ -4,3 +4,4 @@ environment:
   s3:
     bucket: identity-card-ocr
     path: identity/
+  

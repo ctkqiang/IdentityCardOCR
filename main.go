@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"identity_card_ocr/internal/config"
+	"identity_card_ocr/internal/service/aws"
 	"identity_card_ocr/internal/utilities"
+	"log"
 )
 
 var SupportedCountries = []config.Country{
@@ -13,6 +16,8 @@ var SupportedCountries = []config.Country{
 }
 
 func main() {
+	stateContext := context.Background()
+
 	utilities.LogProgress(
 		"IdentityCardOCRService is running... Supported Countries: %v ",
 		"IdentityCardOCRService",
@@ -20,4 +25,8 @@ func main() {
 		"CST",
 		fmt.Sprintf("%v", SupportedCountries),
 	)
+
+	if err := aws.Init(stateContext); err != nil {
+		log.Fatalf("AWS authentication failed: %v", err)
+	}
 }
