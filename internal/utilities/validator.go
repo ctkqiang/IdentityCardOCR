@@ -187,6 +187,37 @@ func ParseIDInfo(id string) *IDInfo {
 	return info
 }
 
+// MyKadDOB parses a 12-digit MyKad number and returns the date of birth in
+// YYYY-MM-DD format. MyKad encodes DOB as YYMMDD in positions 1-6.
+// Century heuristic: YY >= 30 → 19YY, YY < 30 → 20YY.
+func MyKadDOB(myKad string) string {
+	if len(myKad) != 12 {
+		return ""
+	}
+	yy := myKad[0:2]
+	mm := myKad[2:4]
+	dd := myKad[4:6]
+
+	century := "20"
+	if yy >= "30" {
+		century = "19"
+	}
+	return century + yy + "-" + mm + "-" + dd
+}
+
+// MyKadSex returns the sex ("LELAKI" or "PEREMPUAN") from a 12-digit MyKad
+// number. The last digit is odd → male, even → female.
+func MyKadSex(myKad string) string {
+	if len(myKad) != 12 {
+		return ""
+	}
+	lastDigit := myKad[11]
+	if (lastDigit-'0')%2 == 1 {
+		return "LELAKI"
+	}
+	return "PEREMPUAN"
+}
+
 // MyKadBirthMonth returns the 3-letter month abbreviation for a two-digit
 // month code as encoded in a Malaysian MyKad (e.g. "01" → "JAN").
 func MyKadBirthMonth(code string) string {
