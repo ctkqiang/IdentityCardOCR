@@ -1,6 +1,10 @@
 # IdentityCardOCR
 
-Production-grade AWS Lambda service for OCR-based identity document extraction. Supports Chinese Resident Identity Cards (中华人民共和国居民身份证) and Malaysian MyKad/MyPR documents.
+![](./docs/logo.svg)
+
+[English](#english) | [中文](#中文)
+
+Production-grade, open-source AWS Lambda service for OCR-based identity document extraction. Supports Chinese Resident Identity Cards (中华人民共和国居民身份证) and Malaysian MyKad/MyPR documents with automatic AWS infrastructure provisioning.
 
 ## Architecture Overview
 
@@ -27,12 +31,12 @@ Production-grade AWS Lambda service for OCR-based identity document extraction. 
 
 ## Supported Documents
 
-| Country | Document Type | OCR Locale | Parser |
-|---------|--------------|------------|--------|
-| China (`china`) | 居民身份证 (Resident Identity Card) | `chi_sim` | GB11643-1999 checksum validation |
-| China (`china`) | 中国护照 (Chinese Passport) | `chi_sim` | Raw text extraction |
-| Malaysia (`malaysia`) | MyKad / MyPR | `eng` | 12-digit pattern + DOB/Sex derivation |
-| Malaysia (`malaysia`) | Malaysian Passport | `eng` | Raw text extraction |
+| Country               | Document Type                       | OCR Locale | Parser                                |
+| --------------------- | ----------------------------------- | ---------- | ------------------------------------- |
+| China (`china`)       | 居民身份证 (Resident Identity Card) | `chi_sim`  | GB11643-1999 checksum validation      |
+| China (`china`)       | 中国护照 (Chinese Passport)         | `chi_sim`  | Raw text extraction                   |
+| Malaysia (`malaysia`) | MyKad / MyPR                        | `eng`      | 12-digit pattern + DOB/Sex derivation |
+| Malaysia (`malaysia`) | Malaysian Passport                  | `eng`      | Raw text extraction                   |
 
 ## Project Structure
 
@@ -174,11 +178,11 @@ All checks are idempotent — safe to run on every cold start without side effec
 
 The application uses an event-driven architecture with three event types:
 
-| Event Type | Detail Payload | When Emitted |
-|-----------|---------------|--------------|
-| `document.submitted` | `DocumentSubmittedPayload` (image_path, s3_bucket, s3_key, country) | Client submits a document |
-| `processing.completed` | `ProcessingCompletedPayload` (id_number, name, nationality, dob, sex, expiry_date, raw_text) | OCR + parsing succeeds |
-| `processing.failed` | `ProcessingFailedPayload` (error, phase) | Any processing step fails |
+| Event Type             | Detail Payload                                                                               | When Emitted              |
+| ---------------------- | -------------------------------------------------------------------------------------------- | ------------------------- |
+| `document.submitted`   | `DocumentSubmittedPayload` (image_path, s3_bucket, s3_key, country)                          | Client submits a document |
+| `processing.completed` | `ProcessingCompletedPayload` (id_number, name, nationality, dob, sex, expiry_date, raw_text) | OCR + parsing succeeds    |
+| `processing.failed`    | `ProcessingFailedPayload` (error, phase)                                                     | Any processing step fails |
 
 Events are durably stored in S3 (`{prefix}/events/{documentID}/{timestamp}.json`) and published to EventBridge for downstream consumers.
 
@@ -186,28 +190,28 @@ Events are durably stored in S3 (`{prefix}/events/{documentID}/{timestamp}.json`
 
 ### `identity-card-ocr-users` (passed)
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `document_id` (PK) | String | S3 object key |
-| `id_number` | String | Extracted ID number |
-| `name` | String | Cardholder name |
-| `date_of_birth` | String | YYYY-MM-DD |
-| `sex` | String | 男/女 or LELAKI/PEREMPUAN |
-| `nationality` | String | Region or nationality |
-| `expiry_date` | String | Document expiry (if found) |
-| `raw_text` | String | Raw OCR output |
-| `country` | String | china / malaysia / us |
-| `created_at` | String | RFC3339 timestamp |
+| Field              | Type   | Description                |
+| ------------------ | ------ | -------------------------- |
+| `document_id` (PK) | String | S3 object key              |
+| `id_number`        | String | Extracted ID number        |
+| `name`             | String | Cardholder name            |
+| `date_of_birth`    | String | YYYY-MM-DD                 |
+| `sex`              | String | 男/女 or LELAKI/PEREMPUAN  |
+| `nationality`      | String | Region or nationality      |
+| `expiry_date`      | String | Document expiry (if found) |
+| `raw_text`         | String | Raw OCR output             |
+| `country`          | String | china / malaysia / us      |
+| `created_at`       | String | RFC3339 timestamp          |
 
 ### `identity-card-ocr-failed` (failed)
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `document_id` (PK) | String | S3 object key |
-| `error` | String | Error message |
-| `phase` | String | Failure phase (init / ocr) |
-| `country` | String | Country code if inferred |
-| `created_at` | String | RFC3339 timestamp |
+| Field              | Type   | Description                |
+| ------------------ | ------ | -------------------------- |
+| `document_id` (PK) | String | S3 object key              |
+| `error`            | String | Error message              |
+| `phase`            | String | Failure phase (init / ocr) |
+| `country`          | String | Country code if inferred   |
+| `created_at`       | String | RFC3339 timestamp          |
 
 ## Required IAM Permissions
 
@@ -237,9 +241,7 @@ Events are durably stored in S3 (`{prefix}/events/{documentID}/{timestamp}.json`
         "dynamodb:PutItem",
         "dynamodb:GetItem"
       ],
-      "Resource": [
-        "arn:aws:dynamodb:ap-east-1:*:table/identity-card-ocr-*"
-      ]
+      "Resource": ["arn:aws:dynamodb:ap-east-1:*:table/identity-card-ocr-*"]
     },
     {
       "Effect": "Allow",
@@ -262,11 +264,13 @@ Events are durably stored in S3 (`{prefix}/events/{documentID}/{timestamp}.json`
 ## Deploying to AWS Lambda
 
 1. Build the binary:
+
    ```bash
    GOOS=linux GOARCH=arm64 CGO_ENABLED=1 go build -o bootstrap ./cmd/lambda/main.go
    ```
 
 2. Create a Lambda function:
+
    - Runtime: `provided.al2023`
    - Architecture: `arm64`
    - Timeout: **≥ 60 seconds** (DynamoDB table creation takes 15–30s on first deploy)
@@ -281,4 +285,19 @@ Events are durably stored in S3 (`{prefix}/events/{documentID}/{timestamp}.json`
 
 ## License
 
-Proprietary. All rights reserved.
+MIT License. Copyright (c) 2026 ctkqiang.
+
+## Documentation
+
+Full documentation in English and Chinese:
+
+| Document | EN | ZH |
+|----------|----|----|
+| Index | [docs/index_en.md](docs/index_en.md) | [docs/index_zh.md](docs/index_zh.md) |
+| Architecture | [docs/architecture_en.md](docs/architecture_en.md) | [docs/architecture_zh.md](docs/architecture_zh.md) |
+| Lambda Flow | [docs/lambda-flow_en.md](docs/lambda-flow_en.md) | [docs/lambda-flow_zh.md](docs/lambda-flow_zh.md) |
+| OCR Pipeline | [docs/ocr-pipeline_en.md](docs/ocr-pipeline_en.md) | [docs/ocr-pipeline_zh.md](docs/ocr-pipeline_zh.md) |
+| Infrastructure | [docs/infrastructure_en.md](docs/infrastructure_en.md) | [docs/infrastructure_zh.md](docs/infrastructure_zh.md) |
+| Configuration | [docs/configuration_en.md](docs/configuration_en.md) | [docs/configuration_zh.md](docs/configuration_zh.md) |
+| Development | [docs/development_en.md](docs/development_en.md) | [docs/development_zh.md](docs/development_zh.md) |
+| Deployment | [docs/deployment_en.md](docs/deployment_en.md) | [docs/deployment_zh.md](docs/deployment_zh.md) |

@@ -18,8 +18,17 @@ var myKadPattern = regexp.MustCompile(`\b\d{12}\b`)
 // expiryPattern matches dates formatted as YYYYMMDD found near expiry / issue annotations.
 var expiryPattern = regexp.MustCompile(`(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])`)
 
-// ParseOCR enriches a DocumentInfo by extracting structured fields from the raw OCR text
-// according to the country-specific identity document layout.
+// ParseOCR extracts structured identity fields from the raw OCR text in doc
+// according to the layout conventions of country's identity documents.
+//
+// For China: parses 18-digit ID number via GB11643-1999, derives DOB/sex/region,
+// heuristically extracts the cardholder name and expiry date.
+//
+// For Malaysia: locates the 12-digit MyKad number, derives DOB via century
+// heuristic (YY≥30→19YY), sex via last-digit parity, and heuristically
+// extracts name and address blocks.
+//
+// For unknown countries the input doc is returned unchanged.
 func ParseOCR(doc model.DocumentInfo, country config.Country) model.DocumentInfo {
 	switch country {
 	case config.CHINA:

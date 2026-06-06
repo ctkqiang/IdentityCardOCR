@@ -94,7 +94,10 @@ func (c *Client) PutFailedRecord(ctx context.Context, table string, item FailedR
 	return nil
 }
 
-// GetUserIdentity retrieves a user identity by document ID.
+// GetUserIdentity retrieves a user identity record by its document_id key.
+//
+// Returns nil, nil when no item matches the document ID.
+// Returns an error only on DynamoDB service failures, not on missing items.
 func (c *Client) GetUserIdentity(ctx context.Context, table, documentID string) (*UserIdentity, error) {
 	out, err := c.client.GetItem(ctx, &dynamodb.GetItemInput{
 		TableName: aws.String(table),

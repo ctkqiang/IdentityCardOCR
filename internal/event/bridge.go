@@ -19,8 +19,9 @@ type BusClient struct {
 	source  string
 }
 
-// NewBusClient creates an EventBridge client wrapper.
-// busName may be empty to use the default event bus.
+// NewBusClient returns an EventBridge publishing wrapper backed by the shared
+// SDK configuration. When busName is empty, Put() targets the default event bus.
+// The source parameter is written to every event's Source field.
 func NewBusClient(cfg aws.Config, busName, source string) *BusClient {
 	return &BusClient{
 		client:  eventbridge.NewFromConfig(cfg),
@@ -29,8 +30,9 @@ func NewBusClient(cfg aws.Config, busName, source string) *BusClient {
 	}
 }
 
-// Put publishes a single event to EventBridge.
-// Returns nil even on failure — callers should not block on EventBridge errors.
+// Put publishes a single event to EventBridge. Errors from the EventBridge
+// API are silently discarded; the S3 event store is the durable source of truth.
+// Callers must not depend on Put for delivery guarantees.
 func (b *BusClient) Put(ctx context.Context, evt Event) error {
 	detail, err := json.Marshal(evt)
 	if err != nil {
@@ -55,7 +57,9 @@ func (b *BusClient) Put(ctx context.Context, evt Event) error {
 	return nil
 }
 
-// PutBatch publishes up to 10 events in a single PutEvents call.
+// PutBatch publishes events in a single PutEvents API call, capped at 10
+// entries (the EventBridge service limit). Excess events beyond the 10th
+// are silently dropped. As with Put, errors are discarded.
 func (b *BusClient) PutBatch(ctx context.Context, events []Event) error {
 	if len(events) == 0 {
 		return nil
@@ -88,7 +92,9 @@ func (b *BusClient) PutBatch(ctx context.Context, events []Event) error {
 	return nil
 }
 
-// EnsureBus verifies the configured event bus exists.
+// EnsureBus calls DescribeEventBus to confirm the configured bus exists.
+// Returns nil for the default bus (empty busName). Returns an error if the
+// named bus cannot be described.
 func (b *BusClient) EnsureBus(ctx context.Context) error {
 	if b.busName == "" {
 		return nil

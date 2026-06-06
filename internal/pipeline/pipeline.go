@@ -21,8 +21,8 @@ type Pipeline struct {
 	bus      *event.BusClient
 }
 
-// New creates a Pipeline with the given store and bus, and registers
-// the default DocumentSubmitted handler.
+// New creates a Pipeline that persists and publishes events through store
+// and bus. The default DocumentSubmitted handler is registered automatically.
 func New(store *event.Store, bus *event.BusClient) *Pipeline {
 	p := &Pipeline{
 		handlers: make(map[event.EventType][]Handler),
@@ -33,14 +33,20 @@ func New(store *event.Store, bus *event.BusClient) *Pipeline {
 	return p
 }
 
-// Handle registers a handler for a given event type.
+// Handle registers h as a handler for events of the given type. Multiple
+// handlers for the same type run in registration order when Process is called.
 func (p *Pipeline) Handle(typ event.EventType, h Handler) {
 	p.handlers[typ] = append(p.handlers[typ], h)
 }
 
-// Process persists the event to S3, publishes to EventBridge, runs all
-// registered handlers for the event type, and persists/publishes any
-// resulting events.
+// Process persists evt to the S3 event store, publishes it to EventBridge,
+// and executes every handler registered for evt.Type. Events produced by
+// handlers are recursively persisted and published.
+//
+// A handler error does not abort the pipeline; remaining handlers for the
+// same event type still execute. Handler errors are logged but not returned.
+// Only an S3 persistence failure on the trigger event causes Process to
+// return an error.
 func (p *Pipeline) Process(ctx context.Context, evt event.Event) ([]event.Event, error) {
 	if err := p.store.Append(ctx, evt); err != nil {
 		utilities.LogError("pipeline", "process", err, 0, "event_id="+evt.ID)

@@ -54,11 +54,15 @@ func main() {
 		lambda.Start(lambdahandler.HandleRequest)
 
 	} else {
-		runDevCLI(stateContext)
+		runDevCLI()
 	}
 }
 
-func runDevCLI(ctx context.Context) {
+// runDevCLI starts an interactive terminal session for local OCR testing.
+// The user provides an image path and country code; the function runs OCR,
+// parses the result, and prints extracted identity fields to stdout.
+// Type "exit" or "quit" at the image prompt to stop the loop.
+func runDevCLI() {
 	scanner := bufio.NewScanner(os.Stdin)
 
 	utilities.LogProgress(
@@ -120,6 +124,10 @@ func runDevCLI(ctx context.Context) {
 	}
 }
 
+// printDocument writes the extracted identity fields from doc to stdout
+// in a formatted table. For Chinese ID cards it performs GB11643-1999
+// checksum validation and displays the administrative region. For Malaysian
+// MyKad numbers it displays the birth place and birth month.
 func printDocument(doc model.DocumentInfo, country config.Country) {
 	fmt.Println("----------------------------------------")
 	fmt.Println("  Extracted Identity Information")

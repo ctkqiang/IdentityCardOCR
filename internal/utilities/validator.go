@@ -81,16 +81,22 @@ var regionCodes = map[string]string{
 	"361100": "江西省上饶市",
 }
 
-// ValidateChineseIDNumber checks whether s matches the 18-digit format regex.
-// For full GB11643-1999 checksum validation, use ValidateChineseIDNumberFull.
+// ValidateChineseIDNumber reports whether s matches the 18-digit Chinese ID
+// number format (6-digit area code + 8-digit DOB + 3-digit sequence + 1 check
+// digit). It performs only format validation; use ValidateChineseIDNumberFull
+// for full GB11643-1999 checksum verification.
 func ValidateChineseIDNumber(s string) bool {
 	return idCardPattern.MatchString(s)
 }
 
-// ValidateChineseIDNumberFull performs the complete GB11643-1999 validation on
-// an 18-digit Chinese Resident Identity Card number:
-//  1. Format check via regex
-//  2. Checksum verification using weighted factors
+// ValidateChineseIDNumberFull validates an 18-digit Chinese Resident Identity
+// Card number against GB11643-1999. Validation consists of format matching
+// (area code + DOB + sequence + check digit) and weighted checksum
+// verification using the standard GB/T 11643 weight factors.
+//
+// Returns false for inputs that fail either format or checksum checks.
+// The check digit character X (uppercase or lowercase) is normalised to
+// uppercase before comparison.
 func ValidateChineseIDNumberFull(s string) bool {
 	if !idCardPattern.MatchString(s) {
 		return false
@@ -112,13 +118,15 @@ func ValidateChineseIDNumberFull(s string) bool {
 	return gbCheckTable[sum%11] == upper[17]
 }
 
-// ValidateDateFormat checks whether s is in YYYY-MM-DD format.
+// ValidateDateFormat reports whether s matches the YYYY-MM-DD date format
+// with valid month (01–12) and day (01–31) ranges.
 func ValidateDateFormat(s string) bool {
 	return dateRE.MatchString(s)
 }
 
-// DOBFromIDNumber extracts the date of birth (YYYY-MM-DD) from a valid 18-digit
-// Chinese ID number. Returns empty string if the ID is not 18 characters.
+// DOBFromIDNumber extracts the date of birth in YYYY-MM-DD format from bytes
+// [6..14) of an 18-digit Chinese ID number. Returns "" when id is shorter
+// than 18 characters.
 func DOBFromIDNumber(id string) string {
 	if len(id) != 18 {
 		return ""
@@ -126,14 +134,15 @@ func DOBFromIDNumber(id string) string {
 	return id[6:10] + "-" + id[10:12] + "-" + id[12:14]
 }
 
-// ValidateDOBConsistency checks whether dob matches the date-of-birth encoded
-// in positions [6..14) of the ID number.
+// ValidateDOBConsistency reports whether dob matches the date of birth
+// encoded at positions [6..14) of the 18-digit Chinese ID number.
 func ValidateDOBConsistency(id, dob string) bool {
 	return dob == DOBFromIDNumber(id)
 }
 
-// SexFromIDNumber derives sex from a Chinese ID number.
-// Returns "男" for odd 17th digit, "女" for even. Returns "" if ID is not 18 chars.
+// SexFromIDNumber derives sex from the 17th digit of an 18-digit Chinese ID
+// number. An odd digit returns "男" (male), an even digit returns "女" (female).
+// Returns "" when id is shorter than 18 characters.
 func SexFromIDNumber(id string) string {
 	if len(id) != 18 {
 		return ""
@@ -144,7 +153,8 @@ func SexFromIDNumber(id string) string {
 	return "女"
 }
 
-// ValidateSexConsistency checks whether sex matches the 17th digit of the ID.
+// ValidateSexConsistency reports whether sex matches the value derived from
+// the 17th digit of the 18-digit Chinese ID number.
 func ValidateSexConsistency(id, sex string) bool {
 	return sex == SexFromIDNumber(id)
 }
@@ -159,8 +169,19 @@ type IDInfo struct {
 	CheckDigit  string // the check character (0-9 or X)
 }
 
-// ParseIDInfo parses an 18-digit Chinese ID number into structured IDInfo.
-// Returns nil if the number fails full GB11643-1999 validation.
+// ParseIDInfo validates an 18-digit Chinese ID number against GB11643-1999
+// and decomposes it into structured IDInfo. Returns nil when validation fails.
+//
+// The returned IDInfo carries:
+//   - Number:      the full 18-digit string
+//   - Region:      the best-match administrative region name
+//   - RegionCode:  6-digit administrative division code
+//   - DateOfBirth: YYYY-MM-DD from positions [6..14)
+//   - Sex:         "男" or "女" from digit 17 parity
+//   - CheckDigit:  the checksum character (0–9 or X)
+//
+// Region lookup tries the exact 6-digit code first, then falls back to the
+// 2-digit provincial code with trailing "0000".
 func ParseIDInfo(id string) *IDInfo {
 	if !ValidateChineseIDNumberFull(id) {
 		return nil
@@ -187,9 +208,10 @@ func ParseIDInfo(id string) *IDInfo {
 	return info
 }
 
-// MyKadDOB parses a 12-digit MyKad number and returns the date of birth in
-// YYYY-MM-DD format. MyKad encodes DOB as YYMMDD in positions 1-6.
-// Century heuristic: YY >= 30 → 19YY, YY < 30 → 20YY.
+// MyKadDOB extracts the date of birth from a 12-digit Malaysian MyKad number
+// in YYYY-MM-DD format. MyKad encodes the birth date as YYMMDD at positions
+// [0..6). The century is inferred: YY ≥ 30 → 19YY, YY < 30 → 20YY.
+// Returns "" when myKad is not exactly 12 characters.
 func MyKadDOB(myKad string) string {
 	if len(myKad) != 12 {
 		return ""
@@ -205,8 +227,9 @@ func MyKadDOB(myKad string) string {
 	return century + yy + "-" + mm + "-" + dd
 }
 
-// MyKadSex returns the sex ("LELAKI" or "PEREMPUAN") from a 12-digit MyKad
-// number. The last digit is odd → male, even → female.
+// MyKadSex derives sex from the last digit of a 12-digit Malaysian MyKad
+// number. An odd last digit returns "LELAKI" (male), an even last digit
+// returns "PEREMPUAN" (female). Returns "" when myKad is not 12 characters.
 func MyKadSex(myKad string) string {
 	if len(myKad) != 12 {
 		return ""

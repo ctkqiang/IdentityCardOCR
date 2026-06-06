@@ -20,7 +20,8 @@ type Store struct {
 	prefix string
 }
 
-// NewStore creates an event Store using the given S3 client, bucket, and key prefix.
+// NewStore creates an S3-backed event Store using the shared SDK configuration.
+// The prefix must not have a trailing slash; it is stripped if present.
 func NewStore(cfg aws.Config, bucket, prefix string) *Store {
 	return &Store{
 		client: s3.NewFromConfig(cfg),
@@ -29,8 +30,12 @@ func NewStore(cfg aws.Config, bucket, prefix string) *Store {
 	}
 }
 
-// Append writes a single event as a JSON object to S3.
-// Key: {prefix}/events/{documentID}/{timestamp_nano_20d}.json
+// Append writes an event as an immutable JSON object to S3.
+//
+// The object key is {prefix}/events/{documentID}/{timestamp_nano_20d}.json
+// where the timestamp is the event's Timestamp field formatted as a 20-digit
+// nanosecond Unix epoch. Nanosecond granularity prevents key collisions for
+// events on the same document.
 func (s *Store) Append(ctx context.Context, evt Event) error {
 	body, err := json.Marshal(evt)
 	if err != nil {
@@ -52,7 +57,8 @@ func (s *Store) Append(ctx context.Context, evt Event) error {
 	return nil
 }
 
-// Replay reads all events for a document ID in chronological order.
+// Replay reads every event persisted for documentID, sorted by timestamp
+// ascending. Returns an empty slice, not nil, when no events exist.
 func (s *Store) Replay(ctx context.Context, documentID string) ([]Event, error) {
 	prefix := fmt.Sprintf("%s/events/%s/", s.prefix, documentID)
 
@@ -94,7 +100,9 @@ func (s *Store) Replay(ctx context.Context, documentID string) ([]Event, error) 
 	return events, nil
 }
 
-// ListDocuments returns all document IDs that have at least one event.
+// ListDocuments returns every document ID with at least one persisted event.
+// IDs are sorted alphabetically. Returns an empty slice when the event store
+// contains no documents.
 func (s *Store) ListDocuments(ctx context.Context) ([]string, error) {
 	prefix := fmt.Sprintf("%s/events/", s.prefix)
 

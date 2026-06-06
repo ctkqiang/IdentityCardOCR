@@ -29,8 +29,19 @@ type Response struct {
 	Failed  int    `json:"failed"`
 }
 
-// HandleRequest is the Lambda entry point. It processes an S3 event,
-// runs OCR on each object, emits events, and stores results in DynamoDB.
+// HandleRequest is the AWS Lambda handler invoked on S3 object creation events.
+//
+// For each S3 object:
+//   - Infers the document country from the key prefix (e.g. "china/...").
+//   - Downloads the object to /tmp for Tesseract processing.
+//   - Runs OCR and country-specific field extraction.
+//   - On success: persists to DynamoDB user_identity table and emits a
+//     processing.completed event via the pipeline.
+//   - On failure: persists to DynamoDB failed_records table and emits a
+//     processing.failed event via the pipeline.
+//
+// Returns a Response summarising total, passed, and failed counts.
+// Individual object failures never abort the entire batch.
 func HandleRequest(ctx context.Context, s3Event events.S3Event) (Response, error) {
 	utilities.LogProgress("lambda", "handler", "invoked", fmt.Sprintf("records=%d", len(s3Event.Records)))
 

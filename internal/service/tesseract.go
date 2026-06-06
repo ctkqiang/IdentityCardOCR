@@ -14,10 +14,24 @@ var (
 	countryLocaleMap  map[config.Country]config.Locale
 )
 
+// GetTesseractClient allocates and returns a new gosseract OCR client.
+// The caller must call Close() on the returned client to release native
+// Tesseract resources.
 func GetTesseractClient() *gosseract.Client {
 	return gosseract.NewClient()
 }
 
+// ExtractTextFromIdentityDocument runs Tesseract OCR on the image at imagePath
+// using the locale and segmentation mode appropriate for country, then parses
+// the raw text into a structured DocumentInfo.
+//
+// Supported country values:
+//   - config.CHINA:    chi_sim locale, PSM_SINGLE_BLOCK, Chinese ID card parsing
+//   - config.MALAYSIA: eng locale, default PSM, Malaysian MyKad parsing
+//   - config.US:       eng locale, default PSM, no country-specific parsing
+//
+// The returned DocumentInfo always carries RawText; structured fields are
+// populated only when the parser successfully identifies a known document format.
 func ExtractTextFromIdentityDocument(imagePath string, country config.Country) (model.DocumentInfo, error) {
 	var locale string
 

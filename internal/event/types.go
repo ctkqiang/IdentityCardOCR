@@ -54,8 +54,11 @@ type ProcessingFailedPayload struct {
 	Phase string `json:"phase"`
 }
 
-// New creates an Event with an auto-generated UUID, current UTC timestamp,
-// and the detail value marshaled to JSON.
+// New builds an Event envelope with a cryptographically random UUID v4,
+// the current UTC timestamp, and detail serialized as JSON.
+//
+// The Source field is set to the package-level constant eventSource.
+// If detail cannot be marshaled the Detail field carries an error description.
 func New(typ EventType, documentID string, detail interface{}) Event {
 	raw, err := json.Marshal(detail)
 	if err != nil {
@@ -71,12 +74,14 @@ func New(typ EventType, documentID string, detail interface{}) Event {
 	}
 }
 
-// UnmarshalDetail decodes the Detail field into v.
+// UnmarshalDetail decodes the JSON-encoded Detail payload into v.
+// v must be a pointer to the target payload type.
 func (e *Event) UnmarshalDetail(v interface{}) error {
 	return json.Unmarshal(e.Detail, v)
 }
 
-// NewID generates a UUID v4 string using crypto/rand.
+// NewID generates a UUID v4 string from crypto/rand.
+// Panics if the system random source is unavailable.
 func NewID() string {
 	var buf [16]byte
 	if _, err := rand.Read(buf[:]); err != nil {
