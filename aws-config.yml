@@ -4,4 +4,6 @@ environment:
   s3:
     bucket: identity-card-ocr
     path: identity/
-  
+  eventbridge:
+    bus_name: identity-card-ocr-bus
+    source: identity-card-ocr

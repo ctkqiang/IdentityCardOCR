@@ -47,6 +47,10 @@ type awsConfigRaw struct {
 			Bucket string `yaml:"bucket"`
 			Path   string `yaml:"path"`
 		} `yaml:"s3"`
+		EventBridge struct {
+			BusName string `yaml:"bus_name"`
+			Source  string `yaml:"source"`
+		} `yaml:"eventbridge"`
 	} `yaml:"environment"`
 }
 
@@ -61,12 +65,19 @@ type S3Config struct {
 	Path   string // S3 key prefix, e.g. identity/
 }
 
+// EventBridgeConfig holds EventBridge bus name and event source from aws-config.yml.
+type EventBridgeConfig struct {
+	BusName string // custom event bus name; empty = default bus
+	Source  string // EventBridge Source field, e.g. identity-card-ocr
+}
+
 // AWSConfig holds AWS environment configuration, always read fresh from aws-config.yml.
 // Access via config.AWS().Region / config.AWS().S3.Bucket to always get live values.
 type AWSConfig struct {
-	Region  string   // AWS region, e.g. ap-east-1 (Hong Kong)
-	Profile string   // AWS credentials profile name
-	S3      S3Config // S3 bucket and path configuration
+	Region      string            // AWS region, e.g. ap-east-1 (Hong Kong)
+	Profile     string            // AWS credentials profile name
+	S3          S3Config          // S3 bucket and path configuration
+	EventBridge EventBridgeConfig // EventBridge bus name and source
 }
 
 var (
@@ -113,6 +124,10 @@ func AWS() AWSConfig {
 				Bucket: "identity-card-ocr",
 				Path:   "identity/",
 			},
+			EventBridge: EventBridgeConfig{
+				BusName: "",
+				Source:  "identity-card-ocr",
+			},
 		}
 	)
 
@@ -141,6 +156,14 @@ func AWS() AWSConfig {
 
 	if raw.Environment.S3.Path != "" {
 		cfg.S3.Path = raw.Environment.S3.Path
+	}
+
+	if raw.Environment.EventBridge.BusName != "" {
+		cfg.EventBridge.BusName = raw.Environment.EventBridge.BusName
+	}
+
+	if raw.Environment.EventBridge.Source != "" {
+		cfg.EventBridge.Source = raw.Environment.EventBridge.Source
 	}
 
 	return cfg
