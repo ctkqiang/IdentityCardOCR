@@ -124,63 +124,134 @@ func runDevCLI() {
 	}
 }
 
-// printDocument writes the extracted identity fields from doc to stdout
-// in a formatted table. For Chinese ID cards it performs GB11643-1999
-// checksum validation and displays the administrative region. For Malaysian
-// MyKad numbers it displays the birth place and birth month.
+// ANSI terminal escapes for the CLI card UI.
+const (
+	cBold   = "\033[1m"
+	cDim    = "\033[2m"
+	cReset  = "\033[0m"
+	cGreen  = "\033[32m"
+	cRed    = "\033[31m"
+	cYellow = "\033[33m"
+	cCyan   = "\033[36m"
+	cWhite  = "\033[37m"
+	cGray   = "\033[90m"
+)
+
+// printDocument renders the extracted identity fields as a styled terminal card.
 func printDocument(doc model.DocumentInfo, country config.Country) {
-	fmt.Println("----------------------------------------")
-	fmt.Println("  Extracted Identity Information")
-	fmt.Println("----------------------------------------")
+	labelWidth := 16
 
-	if doc.IDNumber != "" {
-		fmt.Printf("  ID Number    : %s\n", doc.IDNumber)
+	docType := documentTypeLabel(country, doc.IDNumber)
+	headerColor := headerColorForCountry(country)
+
+	fmt.Print("\n")
+	fmt.Printf("  %s╭──────────────────────────────────────────────╮%s\n", cGray, cReset)
+	fmt.Printf("  %s│%s  %s%-44s%s %s│%s\n", cGray, cReset, headerColor+cBold, docType, cReset, cGray, cReset)
+	fmt.Printf("  %s├──────────────────────────────────────────────┤%s\n", cGray, cReset)
+
+	field := func(label, value string) {
+		if value == "" {
+			return
+		}
+		fmt.Printf("  %s│%s  %-*s %s%s%s\n", cGray, cReset, labelWidth, cDim+label+":", cReset, cWhite, value)
 	}
-	if doc.Name != "" {
-		fmt.Printf("  Name         : %s\n", doc.Name)
-	}
-	if doc.Nationality != "" {
-		fmt.Printf("  Nationality  : %s\n", doc.Nationality)
-	}
-	if doc.DateOfBirth != "" {
-		fmt.Printf("  Date of Birth: %s\n", doc.DateOfBirth)
-	}
-	if doc.Sex != "" {
-		fmt.Printf("  Sex          : %s\n", doc.Sex)
-	}
-	if doc.Address != "" {
-		fmt.Printf("  Address      : %s\n", doc.Address)
-	}
+
+	field("ID Number", doc.IDNumber)
+	field("Name", doc.Name)
+	field("Nationality", doc.Nationality)
+	field("Date of Birth", doc.DateOfBirth)
+	field("Sex", doc.Sex)
+	field("Address", doc.Address)
+
 	if doc.ExpiryDate != "" {
-		fmt.Printf("  Expiry Date  : %s\n", doc.ExpiryDate)
+		expiryColor := cWhite
+		labelColor := cDim
+		fmt.Printf("  %s│%s  %-*s %s%s%s\n", cGray, cReset, labelWidth, labelColor+"Expiry Date:", cReset, expiryColor, doc.ExpiryDate)
 	}
-	if doc.RawText != "" {
-		fmt.Println("----------------------------------------")
-		fmt.Printf("  Raw OCR Text :\n    %s\n", doc.RawText)
-	}
-	fmt.Println("----------------------------------------")
 
-	if country == config.CHINA && doc.IDNumber != "" {
+	fmt.Printf("  %s├──────────────────────────────────────────────┤%s\n", cGray, cReset)
+
+	// Validation block — country-specific checks.
+	validationBlock(country, doc)
+
+	fmt.Printf("  %s╰──────────────────────────────────────────────╯%s\n", cGray, cReset)
+
+	// Raw OCR text below the card.
+	if doc.RawText != "" {
+		fmt.Printf("\n  %s┌─ Raw OCR Output %s\n", cGray, strings.Repeat("─", 54))
+		for _, line := range strings.Split(doc.RawText, "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			fmt.Printf("  %s│%s %s%s%s\n", cGray, cReset, cDim, line, cReset)
+		}
+		fmt.Printf("  %s└%s%s\n\n", cGray, strings.Repeat("─", 59), cReset)
+	}
+}
+
+func validationBlock(country config.Country, doc model.DocumentInfo) {
+	switch {
+	case country == config.CHINA && doc.IDNumber != "":
 		info := utilities.ParseIDInfo(doc.IDNumber)
 		if info != nil {
-			fmt.Println("  [GB11643-1999 Validation: PASSED]")
-			if info.Region != "" {
-				fmt.Printf("  Region       : %s\n", info.Region)
-			}
-			fmt.Printf("  Check Digit  : %s\n", info.CheckDigit)
-			fmt.Println("----------------------------------------")
+			valid := fmt.Sprintf("%s%sVALID%s", cGreen+cBold, "  PASS  ", cReset)
+			fmt.Printf("  %s│%s  GB11643-1999    %-30s%s│%s\n", cGray, cReset, valid, cGray, cReset)
+			meta("Region", info.Region)
+			meta("Check Digit", info.CheckDigit)
+		} else {
+			fail := fmt.Sprintf("%s%sFAIL%s", cRed+cBold, "  FAIL  ", cReset)
+			fmt.Printf("  %s│%s  GB11643-1999    %-30s%s│%s\n", cGray, cReset, fail, cGray, cReset)
 		}
-	}
 
-	if country == config.MALAYSIA && doc.IDNumber != "" {
+	case country == config.MALAYSIA && doc.IDNumber != "":
 		bp := utilities.MyKadBirthPlace(doc.IDNumber[6:8])
 		if bp != "" {
-			fmt.Printf("  Birth Place  : %s\n", bp)
+			meta("Birth Place", bp)
 		}
 		bm := utilities.MyKadBirthMonth(doc.IDNumber[2:4])
 		if bm != "" {
-			fmt.Printf("  Birth Month  : %s\n", bm)
+			meta("Birth Month", bm)
 		}
-		fmt.Println("----------------------------------------")
+
+	default:
+		if doc.IDNumber == "" {
+			fmt.Printf("  %s│%s  %s%-44s%s%s│%s\n", cGray, cReset, cRed, "  No ID number extracted", cReset, cGray, cReset)
+		}
+	}
+}
+
+func meta(label, value string) {
+	if value == "" {
+		return
+	}
+	fmt.Printf("  %s│%s  %-16s %s%s%s\n", cGray, cReset, cDim+label+":", cReset, cWhite, value)
+}
+
+func documentTypeLabel(country config.Country, idNumber string) string {
+	switch country {
+	case config.CHINA:
+		if idNumber != "" && len(idNumber) == 18 {
+			return "CHINESE IDENTITY CARD"
+		}
+		return "CHINESE DOCUMENT"
+	case config.MALAYSIA:
+		if idNumber != "" && len(idNumber) == 12 {
+			return "MALAYSIAN MyKad"
+		}
+		return "MALAYSIAN DOCUMENT"
+	default:
+		return "IDENTITY DOCUMENT"
+	}
+}
+
+func headerColorForCountry(country config.Country) string {
+	switch country {
+	case config.CHINA:
+		return cRed
+	case config.MALAYSIA:
+		return cYellow
+	default:
+		return cCyan
 	}
 }
