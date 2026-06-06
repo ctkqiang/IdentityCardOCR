@@ -1,3 +1,6 @@
 environment:
   region: ap-east-1
   profile: default
+  s3:
+    bucket: identity-card-ocr
+    path: identity/
