@@ -1,6 +1,10 @@
 package main
 
-import "identity_card_ocr/internal/config"
+import (
+	"fmt"
+	"identity_card_ocr/internal/config"
+	"identity_card_ocr/internal/utilities"
+)
 
 var SupportedCountries = []config.Country{
 	config.CHINA,
@@ -8,4 +12,12 @@ var SupportedCountries = []config.Country{
 	config.US,
 }
 
-func main() {}
+func main() {
+	utilities.LogProgress(
+		"IdentityCardOCRService is running... Supported Countries: %v ",
+		"IdentityCardOCRService",
+		"1.0.0",
+		"CST",
+		fmt.Sprintf("%v", SupportedCountries),
+	)
+}
