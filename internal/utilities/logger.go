@@ -50,7 +50,7 @@ type LogLevel int
 
 const (
 	// APP_NAME identifies logs in CloudWatch for filtering: [IdentityCardOCRService] message
-	APP_NAME = "IdentityCardOCRService"
+	APP_NAME = "IOCR"
 	// VERSION tracks schema compatibility for log parsing in CloudWatch Logs Insights
 	VERSION = "1.0.0"
 	// TZ is the timezone identifier for log timestamps (Beijing Time)

@@ -10,14 +10,32 @@ import (
 )
 
 type (
-	Country     string
-	AWSSecurity string
+	Country      int
+	AWSSecurity  string
+	Locale       string
+	DocumentType int
+)
+
+func (l Locale) String() string {
+	panic("unimplemented")
+}
+
+const (
+	CHINA Country = iota
+	MALAYSIA
+	US
 )
 
 const (
-	CHINA    Country = "CN"
-	MALAYSIA Country = "MY"
-	US       Country = "US"
+	CHINESE Locale = "chi_sim"
+	ENGLISH Locale = "eng"
+)
+
+const (
+	ChinaIDCard DocumentType = iota
+	MalaysianMYKAD
+	ChinesePassport
+	MalaysianPassport
 )
 
 // awsConfigRaw mirrors the structure of aws-config.yml for YAML unmarshaling.

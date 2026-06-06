@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"identity_card_ocr/internal/config"
+	"identity_card_ocr/internal/utilities"
 	"sync"
 	"time"
 
@@ -57,11 +58,13 @@ var (
 //	    log.Fatal("AWS authentication failed:", err)
 //	}
 func Init(ctx context.Context) error {
+	var opts []func(*awsconfig.LoadOptions) error
+
 	globalMu.Lock()
 	defer globalMu.Unlock()
 
 	if globalAccount != nil {
-		return nil // already initialized
+		return nil
 	}
 
 	acct := &Account{}
@@ -70,7 +73,6 @@ func Init(ctx context.Context) error {
 	// If both are present, use static credentials; otherwise fall through
 	// to SDK default chain (~/.aws/credentials, IAM role, etc.).
 	authKeys := config.ConfigAWSAuthKeys()
-	var opts []func(*awsconfig.LoadOptions) error
 	if authKeys.AccessKeyID != "" && authKeys.SecretAccessKey != "" {
 		opts = append(opts,
 			awsconfig.WithCredentialsProvider(
@@ -111,9 +113,17 @@ func Init(ctx context.Context) error {
 		Verified:   true,
 		VerifiedAt: time.Now(),
 	}
-	acct.ready = true
 
+	utilities.LogProgress("aws", "init", "success",
+		fmt.Sprintf("account %s, user %s, arn %s",
+			acct.identity.AccountID,
+			acct.identity.UserID,
+			acct.identity.ARN,
+		),
+	)
+	acct.ready = true
 	globalAccount = acct
+
 	return nil
 }
 
