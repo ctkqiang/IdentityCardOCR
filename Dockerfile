@@ -4,7 +4,8 @@
 # ---- Stage 1: Build ----
 FROM public.ecr.aws/lambda/provided:al2023 AS build
 
-RUN rpm -ivh https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm \
+RUN rpm -ivh --nodeps \
+        https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm \
     && dnf install -y \
         tesseract \
         tesseract-langpack-chi_sim \
@@ -25,7 +26,8 @@ RUN GOOS=linux GOARCH=arm64 CGO_ENABLED=1 \
 # ---- Stage 2: Runtime ----
 FROM public.ecr.aws/lambda/provided:al2023
 
-RUN rpm -ivh https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm \
+RUN rpm -ivh --nodeps \
+        https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm \
     && dnf install -y \
         tesseract \
         tesseract-langpack-chi_sim \
