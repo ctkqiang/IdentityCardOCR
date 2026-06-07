@@ -6,6 +6,19 @@
 
 Production-grade, open-source AWS Lambda service for OCR-based identity document extraction. Supports Chinese Resident Identity Cards (中华人民共和国居民身份证) and Malaysian MyKad/MyPR documents with automatic AWS infrastructure provisioning.
 
+## Architecture Diagrams
+
+### Deployment
+
+![](./out/docs/ARCHITECTURE/ARCHITECTURE.png)
+
+### Sequence
+
+![](./out/docs/SEQUENCE/SEQUENCE.png)
+
+> Source files: [ARCHITECTURE.puml](docs/ARCHITECTURE.puml) | [SEQUENCE.puml](docs/SEQUENCE.puml)
+> Render: `plantuml docs/ARCHITECTURE.puml -o ../out/docs/ARCHITECTURE`
+
 ## Architecture Overview
 
 ```
@@ -259,10 +272,7 @@ Events are durably stored in S3 (`{prefix}/events/{documentID}/{timestamp}.json`
     },
     {
       "Effect": "Allow",
-      "Action": [
-        "xray:PutTraceSegments",
-        "xray:PutTelemetryRecords"
-      ],
+      "Action": ["xray:PutTraceSegments", "xray:PutTelemetryRecords"],
       "Resource": "*"
     }
   ]
@@ -297,6 +307,7 @@ docker push ${ACCOUNT_ID}.dkr.ecr.ap-east-1.amazonaws.com/identity-card-ocr:late
 ```
 
 Or use the Makefile:
+
 ```bash
 make docker-push
 ```
@@ -328,12 +339,12 @@ aws lambda update-function-configuration \
     --region ap-east-1
 ```
 
-| Setting | Recommended Value | Why |
-|---------|-------------------|-----|
-| Memory | 1024 — 3008 MB | Tesseract OCR loads language models into memory |
-| Timeout | 300 — 900 seconds | First cold start creates DynamoDB tables (15–30s); OCR processing takes time |
-| Architecture | arm64 (Graviton) | Lower cost, better performance for Go binaries |
-| Runtime | provided.al2023 | Container image with custom runtime |
+| Setting      | Recommended Value | Why                                                                          |
+| ------------ | ----------------- | ---------------------------------------------------------------------------- |
+| Memory       | 1024 — 3008 MB    | Tesseract OCR loads language models into memory                              |
+| Timeout      | 300 — 900 seconds | First cold start creates DynamoDB tables (15–30s); OCR processing takes time |
+| Architecture | arm64 (Graviton)  | Lower cost, better performance for Go binaries                               |
+| Runtime      | provided.al2023   | Container image with custom runtime                                          |
 
 ### Step 5: Configure S3 trigger
 
@@ -368,14 +379,14 @@ aws lambda update-function-configuration \
 
 ### Lambda Configuration Reference
 
-| Setting | Value |
-|---------|-------|
-| Runtime | `provided.al2023` (container image) |
-| Handler | `bootstrap` (auto-detected from CMD) |
-| Memory | 1024 MB minimum |
-| Timeout | 300 seconds minimum |
-| Architecture | `arm64` |
-| Ephemeral storage | 512 MB (default) |
+| Setting           | Value                                |
+| ----------------- | ------------------------------------ |
+| Runtime           | `provided.al2023` (container image)  |
+| Handler           | `bootstrap` (auto-detected from CMD) |
+| Memory            | 1024 MB minimum                      |
+| Timeout           | 300 seconds minimum                  |
+| Architecture      | `arm64`                              |
+| Ephemeral storage | 512 MB (default)                     |
 
 ## License
 
@@ -385,13 +396,13 @@ MIT License. Copyright (c) 2026 ctkqiang.
 
 Full documentation in English and Chinese:
 
-| Document | EN | ZH |
-|----------|----|----|
-| Index | [docs/index_en.md](docs/index_en.md) | [docs/index_zh.md](docs/index_zh.md) |
-| Architecture | [docs/architecture_en.md](docs/architecture_en.md) | [docs/architecture_zh.md](docs/architecture_zh.md) |
-| Lambda Flow | [docs/lambda-flow_en.md](docs/lambda-flow_en.md) | [docs/lambda-flow_zh.md](docs/lambda-flow_zh.md) |
-| OCR Pipeline | [docs/ocr-pipeline_en.md](docs/ocr-pipeline_en.md) | [docs/ocr-pipeline_zh.md](docs/ocr-pipeline_zh.md) |
+| Document       | EN                                                     | ZH                                                     |
+| -------------- | ------------------------------------------------------ | ------------------------------------------------------ |
+| Index          | [docs/index_en.md](docs/index_en.md)                   | [docs/index_zh.md](docs/index_zh.md)                   |
+| Architecture   | [docs/architecture_en.md](docs/architecture_en.md)     | [docs/architecture_zh.md](docs/architecture_zh.md)     |
+| Lambda Flow    | [docs/lambda-flow_en.md](docs/lambda-flow_en.md)       | [docs/lambda-flow_zh.md](docs/lambda-flow_zh.md)       |
+| OCR Pipeline   | [docs/ocr-pipeline_en.md](docs/ocr-pipeline_en.md)     | [docs/ocr-pipeline_zh.md](docs/ocr-pipeline_zh.md)     |
 | Infrastructure | [docs/infrastructure_en.md](docs/infrastructure_en.md) | [docs/infrastructure_zh.md](docs/infrastructure_zh.md) |
-| Configuration | [docs/configuration_en.md](docs/configuration_en.md) | [docs/configuration_zh.md](docs/configuration_zh.md) |
-| Development | [docs/development_en.md](docs/development_en.md) | [docs/development_zh.md](docs/development_zh.md) |
-| Deployment | [docs/deployment_en.md](docs/deployment_en.md) | [docs/deployment_zh.md](docs/deployment_zh.md) |
+| Configuration  | [docs/configuration_en.md](docs/configuration_en.md)   | [docs/configuration_zh.md](docs/configuration_zh.md)   |
+| Development    | [docs/development_en.md](docs/development_en.md)       | [docs/development_zh.md](docs/development_zh.md)       |
+| Deployment     | [docs/deployment_en.md](docs/deployment_en.md)         | [docs/deployment_zh.md](docs/deployment_zh.md)         |

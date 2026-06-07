@@ -1,0 +1,266 @@
+@startuml
+!theme mars
+
+title IdentityCardOCR — System Architecture v1.0.0
+
+left to right direction
+
+actor "Client\n(Mobile / Web)" as client
+
+rectangle "AWS Cloud — ap-east-1" as aws {
+
+    rectangle "S3 Bucket\nidentity-card-ocr\n/identity/*.png" as s3
+    rectangle "AWS Lambda\nidentityOCR\nGo + Tesseract\nprovided.al2023" as lambda
+    rectangle "DynamoDB\nidentity-card-ocr-users\n(PK: document_id)" as ddb_users
+    rectangle "DynamoDB\nidentity-card-ocr-failed\n(PK: document_id)" as ddb_failed
+    rectangle "EventBridge Bus\nidentity-card-ocr-bus" as eb
+    rectangle "CloudWatch Logs\n/aws/lambda/identityOCR" as cw
+    rectangle "X-Ray\nTraces" as xray
+    rectangle "IAM Role\nidentityOCR-execution" as iam
+
+}
+
+rectangle "Downstream\nConsumers" as downstream
+
+client -right-> s3 : Upload image
+s3 -down-> lambda : S3 Event trigger
+lambda -right-> s3 : GetObject
+lambda -down-> ddb_users : PutItem (passed)
+lambda -down-> ddb_failed : PutItem (failed)
+lambda -down-> eb : PutEvents
+lambda -right-> cw : stdout logs
+lambda -up-> xray : trace segments
+eb -right-> downstream : Event delivery
+iam ..> lambda : Execution Role
+
+@enduml
+
+@startuml
+!theme mars
+
+title Sequence: Successful OCR Processing
+
+actor Client as C
+participant "S3 Bucket" as S3
+participant "Lambda\nHandleRequest" as L
+participant "Tesseract\nOCR" as OCR
+participant "Parser\ncountry-specific" as P
+participant "Event\nPipeline" as PL
+participant "DynamoDB\nusers" as DDB
+participant "Event Store\nS3" as EV
+participant "EventBridge\nBus" as EB
+
+== Cold Start (Init Phase) ==
+L -> L : aws.Init(ctx)\nSTS GetCallerIdentity
+L -> L : aws.EnsureInfrastructure(ctx)\nS3 + DynamoDB + EventBridge
+
+== Invocation ==
+C -> S3 : Upload china/id-card.png
+S3 -> L : S3Event { bucket, key }
+
+loop for each S3 record
+
+    L -> L : inferCountry(key)\n"china/" = CHINA
+
+    L -> S3 : GetObject(bucket, key)
+    S3 --> L : image bytes
+
+    L -> OCR : ExtractTextFromIdentityDocument(path, CHINA)
+    activate OCR
+    OCR -> OCR : SetImage\nSetLanguage(chi_sim)\nSetWhitelist\nPSM_SINGLE_BLOCK\nText()
+    OCR -> P : ParseOCR(rawText, CHINA)
+    activate P
+    P -> P : extractIDNumber()\nParseIDInfo()\nDOBFromIDNumber()\nSexFromIDNumber()\nextractChineseName()\nextractExpiryDate()
+    P --> OCR : DocumentInfo
+    deactivate P
+    OCR --> L : DocumentInfo
+    deactivate OCR
+
+    L -> L : os.Remove(temp file)
+
+    L -> PL : Process(ProcessingCompleted)
+    activate PL
+    PL -> EV : Append(event)
+    EV --> PL : persisted
+    PL -> EB : Put(event)
+    deactivate PL
+
+    L -> DDB : PutUserIdentity(table, item)
+    DDB --> L : stored
+
+end
+
+L --> S3 : Response { Passed: N, Failed: 0 }
+
+EB -> EB : processing.completed\ndelivered to downstream
+
+@enduml
+
+@startuml
+!theme mars
+
+title Sequence: Failed Processing
+
+actor Client as C2
+participant "S3 Bucket" as S3b
+participant "Lambda\nHandleRequest" as Lb
+participant "S3 Event Store" as EVb
+participant "EventBridge\nBus" as EBb
+participant "DynamoDB\nfailed_records" as DDBb
+
+C2 -> S3b : Upload bad/corrupted image
+S3b -> Lb : S3Event
+
+alt invalid S3 key prefix
+    Lb -> Lb : inferCountry(key) error
+    Lb -> Lb : emitFailure("init", "unknown country")
+
+else S3 access error
+    Lb -> S3b : GetObject(bucket, key)
+    S3b --> Lb : error
+    Lb -> Lb : emitFailure("init", "s3 download failed")
+
+else OCR or parser error
+    Lb -> Lb : ExtractTextFromIdentityDocument() error
+    Lb -> Lb : emitFailure("ocr", error message)
+end
+
+Lb -> EVb : Append(ProcessingFailed event)
+EVb --> Lb : persisted
+
+Lb -> EBb : Put(event)
+
+Lb -> DDBb : PutFailedRecord(table, item)
+DDBb --> Lb : stored
+
+Lb --> S3b : Response { Passed: 0, Failed: 1 }
+
+@enduml
+
+@startuml
+!theme mars
+
+title Package Dependency Graph
+
+package "main.go" {
+    [main]
+    [runDevCLI]
+}
+
+package "cmd/lambda" {
+    [lambda_main]
+}
+
+package "internal/config" {
+    [config.AWS]
+    [CountryFromString]
+    [ConfigAWSAuthKeys]
+}
+
+package "internal/lambda" {
+    [HandleRequest]
+    [downloadS3Object]
+    [emitFailure]
+    [inferCountry]
+}
+
+package "internal/event" {
+    [event.New]
+    [Store.Append]
+    [Store.Replay]
+    [BusClient.Put]
+    [BusClient.PutBatch]
+}
+
+package "internal/pipeline" {
+    [Process]
+    [Handle]
+}
+
+package "internal/service" {
+    [ExtractTextFromDocument]
+    [ParseOCR]
+}
+
+package "internal/service/aws" {
+    [aws.Init]
+    [GetAccount]
+    [EnsureInfrastructure]
+}
+
+package "internal/service/dynamodb" {
+    [PutUserIdentity]
+    [PutFailedRecord]
+    [GetUserIdentity]
+}
+
+package "internal/utilities" {
+    [LogProgress]
+    [ParseIDInfo]
+    [ValidateChineseIDNumberFull]
+}
+
+[main] --> [aws.Init]
+[main] --> [EnsureInfrastructure]
+[main] --> [HandleRequest]
+[lambda_main] --> [aws.Init]
+[lambda_main] --> [EnsureInfrastructure]
+[lambda_main] --> [HandleRequest]
+
+[HandleRequest] --> [config.AWS]
+[HandleRequest] --> [event.New]
+[HandleRequest] --> [Store.Append]
+[HandleRequest] --> [BusClient.Put]
+[HandleRequest] --> [PutUserIdentity]
+[HandleRequest] --> [PutFailedRecord]
+[HandleRequest] --> [Process]
+[HandleRequest] --> [ExtractTextFromDocument]
+
+[Process] --> [Store.Append]
+[Process] --> [BusClient.Put]
+
+[ExtractTextFromDocument] --> [ParseOCR]
+[ParseOCR] --> [ParseIDInfo]
+[ParseOCR] --> [ValidateChineseIDNumberFull]
+
+[aws.Init] --> [config.AWS]
+[EnsureInfrastructure] --> [GetAccount]
+[EnsureInfrastructure] --> [config.AWS]
+
+@enduml
+
+@startuml
+!theme mars
+
+title State Machine: Document Lifecycle
+
+[*] --> Submitted : Client uploads image
+Submitted --> S3Download : country inferred
+S3Download --> RunOCR : download complete
+RunOCR --> ParseFields : raw text extracted
+ParseFields --> Validate : DocumentInfo populated
+
+Validate --> PersistUser : PASSED
+PersistUser --> EmitCompleted
+EmitCompleted --> [*]
+
+Validate --> PersistFailed : FAILED
+S3Download --> PersistFailed : download error
+Submitted --> PersistFailed : unknown country
+ParseFields --> PersistFailed : parse error
+RunOCR --> PersistFailed : OCR error
+
+PersistFailed --> EmitFailed
+EmitFailed --> [*]
+
+state Submitted : S3 key parsed, country inferred
+state S3Download : image downloaded to /tmp
+state RunOCR : Tesseract extracts raw text
+state ParseFields : country-specific field extraction
+state Validate : checksum / format check
+state PersistUser : PutUserIdentity to DynamoDB
+state EmitCompleted : processing.completed event
+state PersistFailed : PutFailedRecord to DynamoDB
+state EmitFailed : processing.failed event
+
+@enduml

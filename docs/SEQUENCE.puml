@@ -1,0 +1,146 @@
+@startuml
+!theme mars
+
+title IdentityCardOCR — Full Runtime Sequence
+
+actor "Client" as client
+participant "S3\nBucket" as s3
+participant "Lambda\nIdentityCardOCR" as lambda
+participant "Tesseract\nOCR Engine" as tess
+participant "Parser\nCountry-Specific" as parser
+participant "Pipeline\nEvent Processor" as pipeline
+participant "DynamoDB\nusers table" as ddb_users
+participant "DynamoDB\nfailed table" as ddb_failed
+participant "S3\nEvent Store" as event_store
+participant "EventBridge\nBus" as eb
+
+== Lambda Cold Start ==
+lambda -> lambda : main() executes
+lambda -> lambda : aws.Init(ctx)\nSTS GetCallerIdentity
+lambda -> lambda : aws.EnsureInfrastructure(ctx)\nHeadBucket + DescribeTable x2 + DescribeEventBus
+lambda -> lambda : lambda.Start(HandleRequest)
+
+== Invocation ==
+client -> s3 : Upload china/id-card.png
+s3 -> lambda : S3Event { Records: [{ bucket, key }] }
+
+loop For each S3 record
+
+    lambda -> lambda : inferCountry(key)\n"china/" -> CHINA
+
+    lambda -> s3 : GetObject(bucket, key)
+    s3 --> lambda : image bytes -> /tmp/file
+
+    lambda -> tess : ExtractTextFromIdentityDocument(path, CHINA)
+    tess -> tess : SetImage + SetLanguage(chi_sim)\nSetWhitelist + PSM_SINGLE_BLOCK\nText() -> raw string
+    tess -> parser : ParseOCR(rawText, CHINA)
+
+    parser -> parser : extractIDNumber()  -> 18-digit regex
+    parser -> parser : ParseIDInfo()      -> GB11643-1999 checksum
+    parser -> parser : DOBFromIDNumber()  -> positions [6..14)
+    parser -> parser : SexFromIDNumber()  -> digit 17 parity
+    parser -> parser : extractChineseName()
+    parser -> parser : extractExpiryDate()
+    parser --> tess : DocumentInfo
+    tess --> lambda : DocumentInfo
+
+    lambda -> lambda : os.Remove(temp file)
+
+    lambda -> pipeline : Process(ProcessingCompleted)
+    pipeline -> event_store : Append(event) -> S3 JSON
+    pipeline -> eb : Put(event) -> EventBridge
+
+    lambda -> ddb_users : PutUserIdentity(table, item)
+    ddb_users --> lambda : stored
+
+end
+
+lambda --> s3 : Response { Total:N, Passed:N, Failed:0 }
+
+@enduml
+
+@startuml
+!theme mars
+
+title Sequence — Failure Paths
+
+actor "Client" as client
+participant "S3" as s3
+participant "Lambda" as lambda
+participant "S3\nEvent Store" as event_store
+participant "EventBridge\nBus" as eb
+participant "DynamoDB\nfailed" as ddb_failed
+
+client -> s3 : Upload bad image
+s3 -> lambda : S3Event
+
+alt unknown country
+    lambda -> lambda : inferCountry(key) error
+    lambda -> lambda : emitFailure("init", "unknown country")
+
+else S3 download fails
+    lambda -> s3 : GetObject()
+    s3 --> lambda : error
+    lambda -> lambda : emitFailure("init", "s3 download: ...")
+
+else OCR / parser fails
+    lambda -> lambda : ExtractText...() error
+    lambda -> lambda : emitFailure("ocr", "...")
+end
+
+lambda -> event_store : Append(ProcessingFailed)
+lambda -> eb : Put(event)
+lambda -> ddb_failed : PutFailedRecord(table, item)
+ddb_failed --> lambda : stored
+
+lambda --> s3 : Response { Passed:0, Failed:1 }
+
+@enduml
+
+@startuml
+!theme mars
+
+title Sequence — Cold Start Infrastructure Check
+
+participant "Lambda\nmain()" as main
+participant "S3" as s3
+participant "DynamoDB" as ddb
+participant "EventBridge" as eb
+
+main -> main : aws.Init(ctx) -> STS verified
+
+main -> s3 : HeadBucket("identity-card-ocr")
+alt exists
+    s3 --> main : 200 OK
+else missing
+    s3 --> main : 404
+    main -> s3 : CreateBucket(ap-east-1)
+    main -> s3 : Wait exists (30s)
+end
+
+main -> ddb : DescribeTable("identity-card-ocr-users")
+alt ACTIVE
+    ddb --> main : TableDescription
+else missing
+    main -> ddb : CreateTable(PK=document_id, PAY_PER_REQUEST)
+    main -> ddb : Wait ACTIVE (2min)
+end
+
+main -> ddb : DescribeTable("identity-card-ocr-failed")
+alt ACTIVE
+    ddb --> main : TableDescription
+else missing
+    main -> ddb : CreateTable(PK=document_id, PAY_PER_REQUEST)
+    main -> ddb : Wait ACTIVE (2min)
+end
+
+main -> eb : DescribeEventBus("identity-card-ocr-bus")
+alt exists
+    eb --> main : EventBus
+else missing
+    main -> eb : CreateEventBus("identity-card-ocr-bus")
+end
+
+main --> main : Infrastructure ready
+
+@enduml

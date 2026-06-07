@@ -6,6 +6,19 @@
 
 生产级、开源的 AWS Lambda 服务，基于 OCR 实现身份证件信息提取。支持中华人民共和国居民身份证和马来西亚 MyKad/MyPR 证件，具备自动 AWS 基础设施配置能力。
 
+## 架构图
+
+### 部署图
+
+![](./out/docs/ARCHITECTURE/ARCHITECTURE.png)
+
+### 时序图
+
+![](./out/docs/SEQUENCE/SEQUENCE.png)
+
+> 源文件: [ARCHITECTURE.puml](docs/ARCHITECTURE.puml) | [SEQUENCE.puml](docs/SEQUENCE.puml)
+> 渲染: `plantuml docs/ARCHITECTURE.puml -o ../out/docs/ARCHITECTURE`
+
 ## 架构概览
 
 ```
@@ -30,12 +43,12 @@
 
 ## 支持的证件
 
-| 国家 | 证件类型 | OCR 语言 | 解析方式 |
-|------|---------|---------|---------|
-| 中国 (`china`) | 居民身份证 | `chi_sim` | GB11643-1999 校验和验证 |
-| 中国 (`china`) | 中国护照 | `chi_sim` | 原始文本提取 |
-| 马来西亚 (`malaysia`) | MyKad / MyPR | `eng` | 12 位数字模式 + 出生日期/性别推导 |
-| 马来西亚 (`malaysia`) | 马来西亚护照 | `eng` | 原始文本提取 |
+| 国家                  | 证件类型     | OCR 语言  | 解析方式                          |
+| --------------------- | ------------ | --------- | --------------------------------- |
+| 中国 (`china`)        | 居民身份证   | `chi_sim` | GB11643-1999 校验和验证           |
+| 中国 (`china`)        | 中国护照     | `chi_sim` | 原始文本提取                      |
+| 马来西亚 (`malaysia`) | MyKad / MyPR | `eng`     | 12 位数字模式 + 出生日期/性别推导 |
+| 马来西亚 (`malaysia`) | 马来西亚护照 | `eng`     | 原始文本提取                      |
 
 ## 项目结构
 
@@ -177,11 +190,11 @@ environment:
 
 应用程序使用事件驱动架构，包含三种事件类型：
 
-| 事件类型 | 详情负载 | 触发时机 |
-|---------|---------|---------|
-| `document.submitted` | `DocumentSubmittedPayload`（image_path、s3_bucket、s3_key、country） | 客户端提交文档时 |
-| `processing.completed` | `ProcessingCompletedPayload`（id_number、name、nationality、dob、sex、expiry_date、raw_text） | OCR + 解析成功时 |
-| `processing.failed` | `ProcessingFailedPayload`（error、phase） | 任何处理步骤失败时 |
+| 事件类型               | 详情负载                                                                                      | 触发时机           |
+| ---------------------- | --------------------------------------------------------------------------------------------- | ------------------ |
+| `document.submitted`   | `DocumentSubmittedPayload`（image_path、s3_bucket、s3_key、country）                          | 客户端提交文档时   |
+| `processing.completed` | `ProcessingCompletedPayload`（id_number、name、nationality、dob、sex、expiry_date、raw_text） | OCR + 解析成功时   |
+| `processing.failed`    | `ProcessingFailedPayload`（error、phase）                                                     | 任何处理步骤失败时 |
 
 事件持久存储在 S3（`{prefix}/events/{documentID}/{timestamp}.json`）并发布到 EventBridge 供下游消费者使用。
 
@@ -189,28 +202,28 @@ environment:
 
 ### `identity-card-ocr-users`（通过）
 
-| 字段 | 类型 | 描述 |
-|------|------|------|
-| `document_id`（主键） | String | S3 对象键 |
-| `id_number` | String | 提取的证件号码 |
-| `name` | String | 持卡人姓名 |
-| `date_of_birth` | String | YYYY-MM-DD |
-| `sex` | String | 男/女 或 LELAKI/PEREMPUAN |
-| `nationality` | String | 地区或国籍 |
-| `expiry_date` | String | 证件有效期（如找到） |
-| `raw_text` | String | 原始 OCR 输出 |
-| `country` | String | china / malaysia / us |
-| `created_at` | String | RFC3339 时间戳 |
+| 字段                  | 类型   | 描述                      |
+| --------------------- | ------ | ------------------------- |
+| `document_id`（主键） | String | S3 对象键                 |
+| `id_number`           | String | 提取的证件号码            |
+| `name`                | String | 持卡人姓名                |
+| `date_of_birth`       | String | YYYY-MM-DD                |
+| `sex`                 | String | 男/女 或 LELAKI/PEREMPUAN |
+| `nationality`         | String | 地区或国籍                |
+| `expiry_date`         | String | 证件有效期（如找到）      |
+| `raw_text`            | String | 原始 OCR 输出             |
+| `country`             | String | china / malaysia / us     |
+| `created_at`          | String | RFC3339 时间戳            |
 
 ### `identity-card-ocr-failed`（失败）
 
-| 字段 | 类型 | 描述 |
-|------|------|------|
-| `document_id`（主键） | String | S3 对象键 |
-| `error` | String | 错误信息 |
-| `phase` | String | 失败阶段（init / ocr） |
-| `country` | String | 国家代码（如能推断） |
-| `created_at` | String | RFC3339 时间戳 |
+| 字段                  | 类型   | 描述                   |
+| --------------------- | ------ | ---------------------- |
+| `document_id`（主键） | String | S3 对象键              |
+| `error`               | String | 错误信息               |
+| `phase`               | String | 失败阶段（init / ocr） |
+| `country`             | String | 国家代码（如能推断）   |
+| `created_at`          | String | RFC3339 时间戳         |
 
 ## 所需 IAM 权限
 
@@ -258,10 +271,7 @@ environment:
     },
     {
       "Effect": "Allow",
-      "Action": [
-        "xray:PutTraceSegments",
-        "xray:PutTelemetryRecords"
-      ],
+      "Action": ["xray:PutTraceSegments", "xray:PutTelemetryRecords"],
       "Resource": "*"
     }
   ]
@@ -296,6 +306,7 @@ docker push ${ACCOUNT_ID}.dkr.ecr.ap-east-1.amazonaws.com/identity-card-ocr:late
 ```
 
 或使用 Makefile 一键推送：
+
 ```bash
 make docker-push
 ```
@@ -327,12 +338,12 @@ aws lambda update-function-configuration \
     --region ap-east-1
 ```
 
-| 设置 | 推荐值 | 原因 |
-|---------|-------------------|-----|
-| 内存 | 1024 — 3008 MB | Tesseract OCR 将语言模型加载到内存中 |
-| 超时 | 300 — 900 秒 | 首次冷启动创建 DynamoDB 表（15–30 秒）；OCR 处理需要时间 |
-| 架构 | arm64 (Graviton) | 更低成本，Go 二进制文件性能更好 |
-| 运行时 | provided.al2023 | 容器镜像 + 自定义运行时 |
+| 设置   | 推荐值           | 原因                                                     |
+| ------ | ---------------- | -------------------------------------------------------- |
+| 内存   | 1024 — 3008 MB   | Tesseract OCR 将语言模型加载到内存中                     |
+| 超时   | 300 — 900 秒     | 首次冷启动创建 DynamoDB 表（15–30 秒）；OCR 处理需要时间 |
+| 架构   | arm64 (Graviton) | 更低成本，Go 二进制文件性能更好                          |
+| 运行时 | provided.al2023  | 容器镜像 + 自定义运行时                                  |
 
 ### 第五步：配置 S3 触发器
 
@@ -367,14 +378,14 @@ aws lambda update-function-configuration \
 
 ### Lambda 配置参考
 
-| 设置 | 值 |
-|---------|-------|
-| 运行时 | `provided.al2023`（容器镜像） |
-| 处理器 | `bootstrap`（从 CMD 自动检测） |
-| 内存 | 最低 1024 MB |
-| 超时 | 最低 300 秒 |
-| 架构 | `arm64` |
-| 临时存储 | 512 MB（默认） |
+| 设置     | 值                             |
+| -------- | ------------------------------ |
+| 运行时   | `provided.al2023`（容器镜像）  |
+| 处理器   | `bootstrap`（从 CMD 自动检测） |
+| 内存     | 最低 1024 MB                   |
+| 超时     | 最低 300 秒                    |
+| 架构     | `arm64`                        |
+| 临时存储 | 512 MB（默认）                 |
 
 ## 许可证
 
@@ -384,13 +395,13 @@ MIT License. Copyright (c) 2026 ctkqiang.
 
 完整的中英文文档：
 
-| 文档 | EN | ZH |
-|------|----|----|
-| 索引 | [docs/index_en.md](docs/index_en.md) | [docs/index_zh.md](docs/index_zh.md) |
-| 架构设计 | [docs/architecture_en.md](docs/architecture_en.md) | [docs/architecture_zh.md](docs/architecture_zh.md) |
-| Lambda 流程 | [docs/lambda-flow_en.md](docs/lambda-flow_en.md) | [docs/lambda-flow_zh.md](docs/lambda-flow_zh.md) |
-| OCR 管道 | [docs/ocr-pipeline_en.md](docs/ocr-pipeline_en.md) | [docs/ocr-pipeline_zh.md](docs/ocr-pipeline_zh.md) |
-| 基础设施 | [docs/infrastructure_en.md](docs/infrastructure_en.md) | [docs/infrastructure_zh.md](docs/infrastructure_zh.md) |
-| 配置参考 | [docs/configuration_en.md](docs/configuration_en.md) | [docs/configuration_zh.md](docs/configuration_zh.md) |
-| 开发指南 | [docs/development_en.md](docs/development_en.md) | [docs/development_zh.md](docs/development_zh.md) |
-| 部署指南 | [docs/deployment_en.md](docs/deployment_en.md) | [docs/deployment_zh.md](docs/deployment_zh.md) |
+| 文档        | EN                                                     | ZH                                                     |
+| ----------- | ------------------------------------------------------ | ------------------------------------------------------ |
+| 索引        | [docs/index_en.md](docs/index_en.md)                   | [docs/index_zh.md](docs/index_zh.md)                   |
+| 架构设计    | [docs/architecture_en.md](docs/architecture_en.md)     | [docs/architecture_zh.md](docs/architecture_zh.md)     |
+| Lambda 流程 | [docs/lambda-flow_en.md](docs/lambda-flow_en.md)       | [docs/lambda-flow_zh.md](docs/lambda-flow_zh.md)       |
+| OCR 管道    | [docs/ocr-pipeline_en.md](docs/ocr-pipeline_en.md)     | [docs/ocr-pipeline_zh.md](docs/ocr-pipeline_zh.md)     |
+| 基础设施    | [docs/infrastructure_en.md](docs/infrastructure_en.md) | [docs/infrastructure_zh.md](docs/infrastructure_zh.md) |
+| 配置参考    | [docs/configuration_en.md](docs/configuration_en.md)   | [docs/configuration_zh.md](docs/configuration_zh.md)   |
+| 开发指南    | [docs/development_en.md](docs/development_en.md)       | [docs/development_zh.md](docs/development_zh.md)       |
+| 部署指南    | [docs/deployment_en.md](docs/deployment_en.md)         | [docs/deployment_zh.md](docs/deployment_zh.md)         |
