@@ -5,12 +5,12 @@
 FROM public.ecr.aws/lambda/provided:al2023 AS build
 
 RUN dnf install -y \
-        tesseract \
-        tesseract-langpack-chi_sim \
-        tesseract-langpack-eng \
-        leptonica-devel \
-        gcc \
-        golang \
+    tesseract \
+    tesseract-langpack-chi_sim \
+    tesseract-langpack-eng \
+    leptonica-devel \
+    gcc \
+    golang \
     && dnf clean all
 
 WORKDIR /src
@@ -25,9 +25,9 @@ RUN GOOS=linux GOARCH=arm64 CGO_ENABLED=1 \
 FROM public.ecr.aws/lambda/provided:al2023
 
 RUN dnf install -y \
-        tesseract \
-        tesseract-langpack-chi_sim \
-        tesseract-langpack-eng \
+    tesseract \
+    tesseract-langpack-chi_sim \
+    tesseract-langpack-eng \
     && dnf clean all
 
 COPY --from=build /bootstrap ${LAMBDA_RUNTIME_DIR}/
