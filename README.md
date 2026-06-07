@@ -256,6 +256,14 @@ Events are durably stored in S3 (`{prefix}/events/{documentID}/{timestamp}.json`
       "Effect": "Allow",
       "Action": "sts:GetCallerIdentity",
       "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "xray:PutTraceSegments",
+        "xray:PutTelemetryRecords"
+      ],
+      "Resource": "*"
     }
   ]
 }
@@ -342,7 +350,16 @@ Or configure via AWS Console: Lambda → Triggers → Add trigger → S3 → buc
 
 The Lambda role must include the permissions listed in [Infrastructure IAM](#required-iam-permissions). Attach a policy with S3, DynamoDB, EventBridge, and STS access.
 
-### Step 7: Verify deployment
+### Step 7: Enable X-Ray tracing (recommended)
+
+```bash
+aws lambda update-function-configuration \
+    --function-name identityOCR \
+    --tracing-config Mode=Active \
+    --region ap-east-1
+```
+
+### Step 8: Verify deployment
 
 1. Upload a test image: `aws s3 cp test-id.png s3://identity-card-ocr/china/`
 2. Check Lambda logs: `aws logs tail /aws/lambda/identityOCR --follow`

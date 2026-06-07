@@ -38,6 +38,23 @@ var (
 	IsProduction = os.Getenv("IS_PRODUCTION") == "true"
 )
 
+// main is the program entry point. It executes different initialization logic
+// depending on the runtime environment (production or development).
+//
+// Production mode:
+//  1. Log startup info, indicating production mode and version.
+//  2. Initialize the AWS authentication context; terminate on failure.
+//  3. Ensure required AWS infrastructure (S3 Bucket, DynamoDB table, EventBridge bus)
+//     exists, auto-creating any missing resources; terminate on failure.
+//  4. Start the Lambda service to handle requests triggered by S3 uploads:
+//     - Success: Use Tesseract OCR to parse identity card fields, store results in
+//     the DynamoDB user_identity table, and emit a processing.completed event.
+//     - Failure: Store error records in the DynamoDB failed_records table and emit
+//     a processing.failed event.
+//     - No objects: Return a "no objects to process" message.
+//
+// Development mode:
+// Run the local CLI tool for debugging and testing.
 func main() {
 	stateContext := context.Background()
 

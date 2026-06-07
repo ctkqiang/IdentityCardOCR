@@ -17,6 +17,7 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-xray-sdk-go/xray"
 
 	awsaccount "identity_card_ocr/internal/service/aws"
 )
@@ -57,10 +58,11 @@ func HandleRequest(ctx context.Context, s3Event events.S3Event) (Response, error
 	}
 
 	cfg := config.AWS()
-	s3Client := s3.NewFromConfig(awsaccount.GetAccount().Config())
-	store := event.NewStore(awsaccount.GetAccount().Config(), cfg.S3.Bucket, cfg.S3.Path)
-	bus := event.NewBusClient(awsaccount.GetAccount().Config(), cfg.EventBridge.BusName, cfg.EventBridge.Source)
-	ddb := dynamodb.NewClient(awsaccount.GetAccount().Config())
+	awsCfg := awsaccount.GetAccount().Config()
+	s3Client := s3.NewFromConfig(awsCfg)
+	store := event.NewStore(awsCfg, cfg.S3.Bucket, cfg.S3.Path)
+	bus := event.NewBusClient(awsCfg, cfg.EventBridge.BusName, cfg.EventBridge.Source)
+	ddb := dynamodb.NewClient(awsCfg)
 	pipe := pipeline.New(store, bus)
 
 	var passed, failed int
@@ -86,14 +88,16 @@ func HandleRequest(ctx context.Context, s3Event events.S3Event) (Response, error
 			continue
 		}
 
+		_, seg := xray.BeginSubsegment(ctx, "OCR-"+country.String())
 		doc, err := service.ExtractTextFromIdentityDocument(imagePath, country)
 		os.Remove(imagePath)
-
 		if err != nil {
+			seg.Close(err)
 			failed++
 			emitFailure(ctx, pipe, ddb, cfg, docID, err.Error(), "ocr", country.String())
 			continue
 		}
+		seg.Close(nil)
 
 		passed++
 		completed := event.New(event.ProcessingCompleted, docID, event.ProcessingCompletedPayload{

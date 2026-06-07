@@ -255,6 +255,14 @@ environment:
       "Effect": "Allow",
       "Action": "sts:GetCallerIdentity",
       "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "xray:PutTraceSegments",
+        "xray:PutTelemetryRecords"
+      ],
+      "Resource": "*"
     }
   ]
 }
@@ -341,7 +349,16 @@ aws lambda create-event-source-mapping \
 
 Lambda 角色必须包含[基础设施 IAM 权限](#所需-iam-权限)中列出的权限。附加一个包含 S3、DynamoDB、EventBridge 和 STS 访问权限的策略。
 
-### 第七步：验证部署
+### 第七步：启用 X-Ray 追踪（推荐）
+
+```bash
+aws lambda update-function-configuration \
+    --function-name identityOCR \
+    --tracing-config Mode=Active \
+    --region ap-east-1
+```
+
+### 第八步：验证部署
 
 1. 上传测试图片：`aws s3 cp test-id.png s3://identity-card-ocr/china/`
 2. 查看 Lambda 日志：`aws logs tail /aws/lambda/identityOCR --follow`
