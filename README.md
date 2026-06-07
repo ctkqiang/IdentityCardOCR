@@ -263,25 +263,102 @@ Events are durably stored in S3 (`{prefix}/events/{documentID}/{timestamp}.json`
 
 ## Deploying to AWS Lambda
 
-1. Build the binary:
+### Step 1: Build the container image
 
-   ```bash
-   GOOS=linux GOARCH=arm64 CGO_ENABLED=1 go build -o bootstrap ./cmd/lambda/main.go
-   ```
+```bash
+make docker-build
+# Or manually:
+docker build --platform linux/arm64 -t identity-card-ocr:latest .
+```
 
-2. Create a Lambda function:
+### Step 2: Push to Amazon ECR
 
-   - Runtime: `provided.al2023`
-   - Architecture: `arm64`
-   - Timeout: **≥ 60 seconds** (DynamoDB table creation takes 15–30s on first deploy)
-   - Memory: **≥ 512 MB** (Tesseract OCR requires significant memory)
+```bash
+# Create ECR repository (one-time)
+aws ecr create-repository --repository-name identity-card-ocr --region ap-east-1
 
-3. Configure S3 trigger on the bucket with suffix `.png` or `.jpg`
+# Login to ECR
+aws ecr get-login-password --region ap-east-1 | \
+    docker login --username AWS --password-stdin \
+    $(aws sts get-caller-identity --query Account --output text).dkr.ecr.ap-east-1.amazonaws.com
 
-4. Set environment variables:
-   - `IS_PRODUCTION=true`
-   - `AWS_CONFIG_PATH` (optional, defaults to `aws-config.yml` in the deployment package)
-   - `LOG_LEVEL` (optional, defaults to `INFO`)
+# Tag and push
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+docker tag identity-card-ocr:latest ${ACCOUNT_ID}.dkr.ecr.ap-east-1.amazonaws.com/identity-card-ocr:latest
+docker push ${ACCOUNT_ID}.dkr.ecr.ap-east-1.amazonaws.com/identity-card-ocr:latest
+```
+
+Or use the Makefile:
+```bash
+make docker-push
+```
+
+### Step 3: Create or update the Lambda function
+
+```bash
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+aws lambda create-function \
+    --function-name identityOCR \
+    --package-type Image \
+    --code ImageUri=${ACCOUNT_ID}.dkr.ecr.ap-east-1.amazonaws.com/identity-card-ocr:latest \
+    --role arn:aws:iam::${ACCOUNT_ID}:role/identityOCR-execution-role \
+    --region ap-east-1
+```
+
+### Step 4: Configure Lambda settings
+
+```bash
+aws lambda update-function-configuration \
+    --function-name identityOCR \
+    --memory-size 1024 \
+    --timeout 300 \
+    --environment Variables='{
+        "IS_PRODUCTION":"true",
+        "LOG_LEVEL":"INFO"
+    }' \
+    --region ap-east-1
+```
+
+| Setting | Recommended Value | Why |
+|---------|-------------------|-----|
+| Memory | 1024 — 3008 MB | Tesseract OCR loads language models into memory |
+| Timeout | 300 — 900 seconds | First cold start creates DynamoDB tables (15–30s); OCR processing takes time |
+| Architecture | arm64 (Graviton) | Lower cost, better performance for Go binaries |
+| Runtime | provided.al2023 | Container image with custom runtime |
+
+### Step 5: Configure S3 trigger
+
+```bash
+aws lambda create-event-source-mapping \
+    --function-name identityOCR \
+    --event-source-arn arn:aws:s3:::identity-card-ocr \
+    --region ap-east-1
+```
+
+Or configure via AWS Console: Lambda → Triggers → Add trigger → S3 → bucket `identity-card-ocr` → Event type `s3:ObjectCreated:*` → Suffix `.png,.jpg,.jpeg`
+
+### Step 6: IAM Execution Role
+
+The Lambda role must include the permissions listed in [Infrastructure IAM](#required-iam-permissions). Attach a policy with S3, DynamoDB, EventBridge, and STS access.
+
+### Step 7: Verify deployment
+
+1. Upload a test image: `aws s3 cp test-id.png s3://identity-card-ocr/china/`
+2. Check Lambda logs: `aws logs tail /aws/lambda/identityOCR --follow`
+3. Verify DynamoDB: `aws dynamodb scan --table-name identity-card-ocr-users`
+4. Verify EventBridge: Check the `identity-card-ocr-bus` event bus for `processing.completed` events
+
+### Lambda Configuration Reference
+
+| Setting | Value |
+|---------|-------|
+| Runtime | `provided.al2023` (container image) |
+| Handler | `bootstrap` (auto-detected from CMD) |
+| Memory | 1024 MB minimum |
+| Timeout | 300 seconds minimum |
+| Architecture | `arm64` |
+| Ephemeral storage | 512 MB (default) |
 
 ## License
 

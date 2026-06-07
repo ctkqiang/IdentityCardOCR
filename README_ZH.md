@@ -262,25 +262,102 @@ environment:
 
 ## 部署到 AWS Lambda
 
-1. 构建二进制文件：
+### 第一步：构建容器镜像
 
-   ```bash
-   GOOS=linux GOARCH=arm64 CGO_ENABLED=1 go build -o bootstrap ./cmd/lambda/main.go
-   ```
+```bash
+make docker-build
+# 或手动构建：
+docker build --platform linux/arm64 -t identity-card-ocr:latest .
+```
 
-2. 创建 Lambda 函数：
+### 第二步：推送到 Amazon ECR
 
-   - 运行时: `provided.al2023`
-   - 架构: `arm64`
-   - 超时: **≥ 60 秒**（首次部署时 DynamoDB 表创建需要 15–30 秒）
-   - 内存: **≥ 512 MB**（Tesseract OCR 需要较多内存）
+```bash
+# 创建 ECR 仓库（一次性操作）
+aws ecr create-repository --repository-name identity-card-ocr --region ap-east-1
 
-3. 在 S3 桶上配置触发器（后缀 `.png` 或 `.jpg`）
+# 登录 ECR
+aws ecr get-login-password --region ap-east-1 | \
+    docker login --username AWS --password-stdin \
+    $(aws sts get-caller-identity --query Account --output text).dkr.ecr.ap-east-1.amazonaws.com
 
-4. 设置环境变量：
-   - `IS_PRODUCTION=true`
-   - `AWS_CONFIG_PATH`（可选，默认为部署包中的 `aws-config.yml`）
-   - `LOG_LEVEL`（可选，默认为 `INFO`）
+# 打标签并推送
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+docker tag identity-card-ocr:latest ${ACCOUNT_ID}.dkr.ecr.ap-east-1.amazonaws.com/identity-card-ocr:latest
+docker push ${ACCOUNT_ID}.dkr.ecr.ap-east-1.amazonaws.com/identity-card-ocr:latest
+```
+
+或使用 Makefile 一键推送：
+```bash
+make docker-push
+```
+
+### 第三步：创建或更新 Lambda 函数
+
+```bash
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+aws lambda create-function \
+    --function-name identityOCR \
+    --package-type Image \
+    --code ImageUri=${ACCOUNT_ID}.dkr.ecr.ap-east-1.amazonaws.com/identity-card-ocr:latest \
+    --role arn:aws:iam::${ACCOUNT_ID}:role/identityOCR-execution-role \
+    --region ap-east-1
+```
+
+### 第四步：配置 Lambda 设置
+
+```bash
+aws lambda update-function-configuration \
+    --function-name identityOCR \
+    --memory-size 1024 \
+    --timeout 300 \
+    --environment Variables='{
+        "IS_PRODUCTION":"true",
+        "LOG_LEVEL":"INFO"
+    }' \
+    --region ap-east-1
+```
+
+| 设置 | 推荐值 | 原因 |
+|---------|-------------------|-----|
+| 内存 | 1024 — 3008 MB | Tesseract OCR 将语言模型加载到内存中 |
+| 超时 | 300 — 900 秒 | 首次冷启动创建 DynamoDB 表（15–30 秒）；OCR 处理需要时间 |
+| 架构 | arm64 (Graviton) | 更低成本，Go 二进制文件性能更好 |
+| 运行时 | provided.al2023 | 容器镜像 + 自定义运行时 |
+
+### 第五步：配置 S3 触发器
+
+```bash
+aws lambda create-event-source-mapping \
+    --function-name identityOCR \
+    --event-source-arn arn:aws:s3:::identity-card-ocr \
+    --region ap-east-1
+```
+
+或通过 AWS 控制台配置：Lambda → 触发器 → 添加触发器 → S3 → 桶 `identity-card-ocr` → 事件类型 `s3:ObjectCreated:*` → 后缀 `.png,.jpg,.jpeg`
+
+### 第六步：IAM 执行角色
+
+Lambda 角色必须包含[基础设施 IAM 权限](#所需-iam-权限)中列出的权限。附加一个包含 S3、DynamoDB、EventBridge 和 STS 访问权限的策略。
+
+### 第七步：验证部署
+
+1. 上传测试图片：`aws s3 cp test-id.png s3://identity-card-ocr/china/`
+2. 查看 Lambda 日志：`aws logs tail /aws/lambda/identityOCR --follow`
+3. 验证 DynamoDB：`aws dynamodb scan --table-name identity-card-ocr-users`
+4. 验证 EventBridge：检查 `identity-card-ocr-bus` 事件总线中是否有 `processing.completed` 事件
+
+### Lambda 配置参考
+
+| 设置 | 值 |
+|---------|-------|
+| 运行时 | `provided.al2023`（容器镜像） |
+| 处理器 | `bootstrap`（从 CMD 自动检测） |
+| 内存 | 最低 1024 MB |
+| 超时 | 最低 300 秒 |
+| 架构 | `arm64` |
+| 临时存储 | 512 MB（默认） |
 
 ## 许可证
 

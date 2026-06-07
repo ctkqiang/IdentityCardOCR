@@ -1,18 +1,38 @@
-FROM public.ecr.aws/lambda/provided:al2023 AS tesseract-build
+# IdentityCardOCR — AWS Lambda Container Image
+# Multi-stage: compile Go binary with CGo then package for provided.al2023 runtime.
 
-ARG LEPTONICA_VERSION=1.87.0
-ARG TESSERACT_VERSION=5.5.2
-ARG AUTOCONF_ARCHIVE_VERSION=2017.09.28
-ARG TMP_BUILD=/tmp/build
-ARG LEPTONICA_PREFIX=/opt/leptonica
-ARG TESSERACT_PREFIX=/opt/tesseract
-ARG DIST=/opt/tesseract-dist
+# ---- Stage 1: Build ----
+FROM public.ecr.aws/lambda/provided:al2023 AS build
 
-ARG COMPILER_FLAGS="-march=armv8-a+simd -std=c++17"
-
-# curl is already pre-installed as curl-minimal — DO NOT re-install curl here
-RUN dnf -y install \
-    clang gcc-c++ make autoconf automake libtool xz \
-    libjpeg-devel libpng-devel libtiff-devel zlib-devel \
-    libwebp-devel libicu-devel pango-devel \
+RUN dnf install -y \
+        tesseract \
+        tesseract-langpack-chi_sim \
+        tesseract-langpack-eng \
+        leptonica-devel \
+        gcc \
+        golang \
     && dnf clean all
+
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN GOOS=linux GOARCH=arm64 CGO_ENABLED=1 \
+    go build -ldflags="-s -w" -o /bootstrap ./cmd/lambda/main.go
+
+# ---- Stage 2: Runtime ----
+FROM public.ecr.aws/lambda/provided:al2023
+
+RUN dnf install -y \
+        tesseract \
+        tesseract-langpack-chi_sim \
+        tesseract-langpack-eng \
+    && dnf clean all
+
+COPY --from=build /bootstrap ${LAMBDA_RUNTIME_DIR}/
+COPY aws-config.yml ${LAMBDA_TASK_ROOT}/aws-config.yml
+
+ENV IS_PRODUCTION=true
+
+CMD ["bootstrap"]
