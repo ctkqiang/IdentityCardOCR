@@ -17,6 +17,19 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 )
 
+// ANSI terminal escapes for the CLI card UI.
+const (
+	cBold   = "\033[1m"
+	cDim    = "\033[2m"
+	cReset  = "\033[0m"
+	cGreen  = "\033[32m"
+	cRed    = "\033[31m"
+	cYellow = "\033[33m"
+	cCyan   = "\033[36m"
+	cWhite  = "\033[37m"
+	cGray   = "\033[90m"
+)
+
 var (
 	SupportedCountries = []config.Country{
 		config.CHINA,
@@ -123,19 +136,6 @@ func runDevCLI() {
 		fmt.Print("\n")
 	}
 }
-
-// ANSI terminal escapes for the CLI card UI.
-const (
-	cBold   = "\033[1m"
-	cDim    = "\033[2m"
-	cReset  = "\033[0m"
-	cGreen  = "\033[32m"
-	cRed    = "\033[31m"
-	cYellow = "\033[33m"
-	cCyan   = "\033[36m"
-	cWhite  = "\033[37m"
-	cGray   = "\033[90m"
-)
 
 // printDocument renders the extracted identity fields as a styled terminal card.
 func printDocument(doc model.DocumentInfo, country config.Country) {
