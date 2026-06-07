@@ -4,7 +4,7 @@
 # ---- Stage 1: Build ----
 FROM public.ecr.aws/lambda/provided:al2023 AS build
 
-RUN printf '[epel]\nname=EPEL 9\nbaseurl=https://dl.fedoraproject.org/pub/epel/9/$basearch/\nenabled=1\ngpgcheck=0\n' \
+RUN printf '[epel]\nname=EPEL 9\nbaseurl=https://dl.fedoraproject.org/pub/epel/9/Everything/$basearch/\nenabled=1\ngpgcheck=0\n' \
         > /etc/yum.repos.d/epel.repo \
     && dnf install -y \
         tesseract \
@@ -26,7 +26,7 @@ RUN GOOS=linux GOARCH=arm64 CGO_ENABLED=1 \
 # ---- Stage 2: Runtime ----
 FROM public.ecr.aws/lambda/provided:al2023
 
-RUN printf '[epel]\nname=EPEL 9\nbaseurl=https://dl.fedoraproject.org/pub/epel/9/$basearch/\nenabled=1\ngpgcheck=0\n' \
+RUN printf '[epel]\nname=EPEL 9\nbaseurl=https://dl.fedoraproject.org/pub/epel/9/Everything/$basearch/\nenabled=1\ngpgcheck=0\n' \
         > /etc/yum.repos.d/epel.repo \
     && dnf install -y \
         tesseract \
